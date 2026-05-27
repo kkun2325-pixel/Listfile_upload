@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
-import { createUser, getUserByEmail } from "@/lib/db";
+import { createUser, getUserByUsername } from "@/lib/db";
 import { hashPassword, generateToken } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, confirmPassword } = await request.json();
+    const { username, password, confirmPassword } = await request.json();
 
-    // Validation
-    if (!email || !password || !confirmPassword) {
+    if (!username || !password || !confirmPassword) {
       return NextResponse.json(
         { success: false, message: "すべてのフィールドを入力してください" },
         { status: 400 }
@@ -29,37 +28,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user already exists
-    const existingUser = await getUserByEmail(email);
+    const existingUser = await getUserByUsername(username);
     if (existingUser) {
       return NextResponse.json(
-        { success: false, message: "このメールアドレスは既に登録されています" },
+        { success: false, message: "このユーザー名は既に使用されています" },
         { status: 400 }
       );
     }
 
-    // Create user
     const userId = uuidv4();
     const passwordHash = await hashPassword(password);
+    await createUser(userId, username, passwordHash);
 
-    await createUser(userId, email, passwordHash);
-
-    // Generate token
-    const token = generateToken(userId, email);
+    const token = generateToken(userId, username);
 
     return NextResponse.json(
-      {
-        success: true,
-        message: "登録に成功しました",
-        token,
-        user: { id: userId, email },
-      },
+      { success: true, message: "登録に成功しました", token, user: { id: userId, username } },
       { status: 201 }
     );
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
     console.error("Registration error:", error);
     return NextResponse.json(
-      { success: false, message: "登録処理中にエラーが発生しました" },
+      { success: false, message: msg },
       { status: 500 }
     );
   }

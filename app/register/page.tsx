@@ -6,7 +6,7 @@ import Link from "next/link";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -21,7 +21,7 @@ export default function RegisterPage() {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, confirmPassword }),
+        body: JSON.stringify({ username, password, confirmPassword }),
       });
 
       const data = await response.json();
@@ -33,7 +33,7 @@ export default function RegisterPage() {
 
       localStorage.setItem("auth_token", data.token);
       router.push("/dashboard");
-    } catch (err) {
+    } catch {
       setError("エラーが発生しました");
     } finally {
       setLoading(false);
@@ -45,7 +45,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         <div className="card">
           <h1 className="text-3xl font-bold text-gray-800 mb-8 text-center">
-            アカウント作成
+            新規登録
           </h1>
 
           {error && (
@@ -57,13 +57,14 @@ export default function RegisterPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-gray-700 font-medium mb-2">
-                メールアドレス
+                ユーザー名
               </label>
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 className="input-field"
+                placeholder="ユーザー名を入力"
                 required
               />
             </div>
@@ -77,10 +78,10 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="input-field"
+                placeholder="6文字以上"
                 required
                 minLength={6}
               />
-              <small className="text-gray-500">6文字以上</small>
             </div>
 
             <div>
@@ -92,6 +93,7 @@ export default function RegisterPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="input-field"
+                placeholder="もう一度入力"
                 required
               />
             </div>
@@ -101,12 +103,12 @@ export default function RegisterPage() {
               disabled={loading}
               className="w-full btn btn-primary disabled:opacity-50"
             >
-              {loading ? "登録中..." : "登録"}
+              {loading ? "登録中..." : "登録する"}
             </button>
           </form>
 
           <p className="text-center text-gray-600 mt-6">
-            既にアカウントをお持ちですか？{" "}
+            既にアカウントをお持ちの方は{" "}
             <Link href="/login" className="text-blue-600 hover:underline">
               ログイン
             </Link>

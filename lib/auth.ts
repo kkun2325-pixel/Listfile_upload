@@ -14,19 +14,19 @@ export async function verifyPassword(
   return bcryptjs.compare(password, hash);
 }
 
-export function generateToken(userId: string, email: string): string {
+export function generateToken(userId: string, username: string): string {
   return jwt.sign(
-    { userId, email },
+    { userId, username },
     JWT_SECRET,
     { expiresIn: "7d" }
   );
 }
 
-export function verifyToken(token: string): { userId: string; email: string } | null {
+export function verifyToken(token: string): { userId: string; username: string } | null {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as {
       userId: string;
-      email: string;
+      username: string;
     };
     return decoded;
   } catch {

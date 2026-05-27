@@ -1,7 +1,9 @@
 import { neon } from '@neondatabase/serverless'
 
 function getSQL() {
-  const url = process.env.DATABASE_URL
+  const raw = process.env.DATABASE_URL ?? ''
+  // BOM・前後の空白・改行を除去
+  const url = raw.replace(/^﻿/, '').trim()
   if (!url) throw new Error('DATABASE_URL が設定されていません')
   return neon(url)
 }
@@ -9,10 +11,15 @@ function getSQL() {
 export async function initializeDatabase() {
   const sql = getSQL()
 
+  // usersテーブルをusername対応で再作成
+  await sql`DROP TABLE IF EXISTS csv_data`
+  await sql`DROP TABLE IF EXISTS csv_uploads`
+  await sql`DROP TABLE IF EXISTS users`
+
   await sql`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
+      username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -52,18 +59,18 @@ export async function initializeDatabase() {
 
 // ── ユーザー操作 ─────────────────────────────────────────
 
-export async function createUser(id: string, email: string, password_hash: string) {
+export async function createUser(id: string, username: string, password_hash: string) {
   const sql = getSQL()
   const now = new Date().toISOString()
   await sql`
-    INSERT INTO users (id, email, password_hash, created_at, updated_at)
-    VALUES (${id}, ${email}, ${password_hash}, ${now}, ${now})
+    INSERT INTO users (id, username, password_hash, created_at, updated_at)
+    VALUES (${id}, ${username}, ${password_hash}, ${now}, ${now})
   `
 }
 
-export async function getUserByEmail(email: string) {
+export async function getUserByUsername(username: string) {
   const sql = getSQL()
-  const result = await sql`SELECT * FROM users WHERE email = ${email} LIMIT 1`
+  const result = await sql`SELECT * FROM users WHERE username = ${username} LIMIT 1`
   return result[0] ?? null
 }
 

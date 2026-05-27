@@ -6,7 +6,7 @@ import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,7 +20,7 @@ export default function LoginPage() {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username, password }),
       });
 
       const data = await response.json();
@@ -32,7 +32,7 @@ export default function LoginPage() {
 
       localStorage.setItem("auth_token", data.token);
       router.push("/dashboard");
-    } catch (err) {
+    } catch {
       setError("エラーが発生しました");
     } finally {
       setLoading(false);
@@ -56,13 +56,14 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-gray-700 font-medium mb-2">
-                メールアドレス
+                ユーザー名
               </label>
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 className="input-field"
+                placeholder="ユーザー名を入力"
                 required
               />
             </div>
@@ -76,6 +77,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="input-field"
+                placeholder="パスワードを入力"
                 required
               />
             </div>
@@ -90,9 +92,9 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-gray-600 mt-6">
-            アカウントを持っていませんか？{" "}
+            アカウントをお持ちでない方は{" "}
             <Link href="/register" className="text-blue-600 hover:underline">
-              登録
+              新規登録
             </Link>
           </p>
         </div>

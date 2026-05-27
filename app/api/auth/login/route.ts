@@ -1,53 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserByEmail } from "@/lib/db";
+import { getUserByUsername } from "@/lib/db";
 import { verifyPassword, generateToken } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json();
+    const { username, password } = await request.json();
 
-    // Validation
-    if (!email || !password) {
+    if (!username || !password) {
       return NextResponse.json(
-        { success: false, message: "メールアドレスとパスワードを入力してください" },
+        { success: false, message: "ユーザー名とパスワードを入力してください" },
         { status: 400 }
       );
     }
 
-    // Find user
-    const user = await getUserByEmail(email);
+    const user = await getUserByUsername(username);
     if (!user) {
       return NextResponse.json(
-        { success: false, message: "メールアドレスまたはパスワードが正しくありません" },
+        { success: false, message: "ユーザー名またはパスワードが正しくありません" },
         { status: 401 }
       );
     }
 
-    // Verify password
     const passwordValid = await verifyPassword(password, user.password_hash);
     if (!passwordValid) {
       return NextResponse.json(
-        { success: false, message: "メールアドレスまたはパスワードが正しくありません" },
+        { success: false, message: "ユーザー名またはパスワードが正しくありません" },
         { status: 401 }
       );
     }
 
-    // Generate token
-    const token = generateToken(user.id, user.email);
+    const token = generateToken(user.id, user.username);
 
     return NextResponse.json(
-      {
-        success: true,
-        message: "ログインに成功しました",
-        token,
-        user: { id: user.id, email: user.email },
-      },
+      { success: true, message: "ログインに成功しました", token, user: { id: user.id, username: user.username } },
       { status: 200 }
     );
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
     console.error("Login error:", error);
     return NextResponse.json(
-      { success: false, message: "ログイン処理中にエラーが発生しました" },
+      { success: false, message: msg },
       { status: 500 }
     );
   }

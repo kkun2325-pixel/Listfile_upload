@@ -18,7 +18,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
@@ -30,7 +30,7 @@ export default function DashboardPage() {
     // Decode token to get email (simple JWT decode)
     try {
       const payload = JSON.parse(atob(token.split(".")[1]));
-      setEmail(payload.email);
+      setUsername(payload.username);
     } catch {
       router.push("/login");
     }
@@ -82,7 +82,7 @@ export default function DashboardPage() {
             CSV Upload Manager
           </h1>
           <div className="space-x-4">
-            <span className="text-gray-600">{email}</span>
+            <span className="text-gray-600">{username}</span>
             <button onClick={handleLogout} className="btn btn-secondary">
               ログアウト
             </button>
@@ -150,13 +150,14 @@ export default function DashboardPage() {
                         >
                           エクスポート
                         </Link>
+                        {" | "}
+                        <Link
+                          href={`/dashboard/analysis/${upload.id}`}
+                          className="text-blue-600 hover:underline"
+                        >
+                          分析
+                        </Link>
                       </td>
-                          <Link
-                            href={`/dashboard/analysis/${upload.id}`}
-                            className="text-blue-600 hover:underline"
-                          >
-                            {" | "}分析
-                          </Link>
                     </tr>
                   ))}
                 </tbody>

@@ -9,9 +9,10 @@ export async function POST(_request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
     console.error("Database initialization error:", error);
     return NextResponse.json(
-      { success: false, message: "データベース初期化中にエラーが発生しました" },
+      { success: false, message: msg },
       { status: 500 }
     );
   }
