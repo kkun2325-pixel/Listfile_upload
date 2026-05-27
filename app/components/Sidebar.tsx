@@ -43,7 +43,7 @@ const HistoryIcon = () => (
 );
 
 const menuItems: MenuItem[] = [
-  { label: "TOP",              href: "/dashboard",          icon: <HomeIcon />,     exact: true },
+  { label: "TOP",              href: "/dashboard/top",      icon: <HomeIcon />,     exact: true },
   { label: "ダッシュボード",    href: "/dashboard",          icon: <DashIcon />,     exact: true },
   { label: "アップロード",      href: "/dashboard/upload",   icon: <UploadIcon /> },
   { label: "エクスポート",      href: "/dashboard/export",   icon: <ExportIcon /> },
