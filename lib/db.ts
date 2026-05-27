@@ -164,3 +164,52 @@ export async function getDuplicateCount(uploadId: string) {
   `
   return Number(result[0]?.count ?? 0)
 }
+
+// ── 全アップロード＋ユーザー名 ────────────────────────────
+
+export async function getAllCSVUploadsWithUsers() {
+  const sql = getSQL()
+  return sql`
+    SELECT
+      cu.id,
+      cu.original_filename,
+      cu.row_count,
+      cu.uploaded_at,
+      cu.status,
+      u.username
+    FROM csv_uploads cu
+    JOIN users u ON cu.user_id = u.id
+    ORDER BY cu.uploaded_at DESC
+  `
+}
+
+// ── 充填数（非空セル数）をアップロードID別に取得 ─────────
+
+export async function getFillCountPerUpload(
+  uploadIds: string[]
+): Promise<Record<string, number>> {
+  if (uploadIds.length === 0) return {}
+  const sql = getSQL()
+  try {
+    // data列はTEXT(JSON)として保存されているため::jsonbでキャストして展開
+    const results = await sql`
+      SELECT
+        cd.upload_id,
+        COUNT(*) AS fill_count
+      FROM csv_data cd,
+           jsonb_each_text(cd.data::jsonb) kv
+      WHERE cd.upload_id = ANY(${uploadIds})
+        AND kv.value IS NOT NULL
+        AND kv.value <> ''
+      GROUP BY cd.upload_id
+    `
+    const counts: Record<string, number> = {}
+    for (const row of results) {
+      counts[row.upload_id] = Number(row.fill_count)
+    }
+    return counts
+  } catch (e) {
+    console.error('getFillCountPerUpload error:', e)
+    return {}
+  }
+}

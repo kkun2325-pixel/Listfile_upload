@@ -4,78 +4,56 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  PieChart,
-  Pie,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
+
+interface FieldStat {
+  total: number;
+  unique: number;
+  null_count: number;
+  null_percent: string;
+  top_values: { value: string; count: number }[];
+}
 
 interface Stats {
   total_rows: number;
   columns: string[];
-  field_stats: Record<string, any>;
+  field_stats: Record<string, FieldStat>;
   category_stats: Record<string, number>;
   region_stats: Record<string, number>;
-  status_stats: Record<string, number>;
-  raw_data: any[];
 }
 
-const COLORS = [
-  "#0088FE",
-  "#00C49F",
-  "#FFBB28",
-  "#FF8042",
-  "#8884D8",
-  "#82CA9D",
-  "#FFC658",
-  "#FF7C7C",
-];
+const COLORS = ["#1d4ed8","#059669","#d97706","#dc2626","#7c3aed","#0891b2","#be185d","#65a30d"];
 
-export default function AnalysisPage() {
+export default function AnalysisDetailPage() {
   const router = useRouter();
   const params = useParams();
   const uploadId = params.id as string;
+
   const [stats, setStats] = useState<Stats | null>(null);
+  const [uploadInfo, setUploadInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [uploadInfo, setUploadInfo] = useState<any>(null);
+  const [expandedCol, setExpandedCol] = useState<string | null>(null);
+  const [sortByNull, setSortByNull] = useState(true);
 
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
-    if (!token) {
-      router.push("/login");
-      return;
-    }
-
-    fetchAnalysis(token);
-    fetchUploadInfo(token);
+    if (!token) { router.push("/login"); return; }
+    Promise.all([fetchAnalysis(token), fetchUploadInfo(token)]);
   }, [router, uploadId]);
 
   async function fetchAnalysis(token: string) {
     try {
-      const response = await fetch(`/api/analysis/${uploadId}`, {
+      const res = await fetch(`/api/analysis/${uploadId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          router.push("/login");
-        }
-        setError("分析データの取得に失敗しました");
-        return;
-      }
-
-      const data = await response.json();
+      if (!res.ok) { setError("分析データの取得に失敗しました"); return; }
+      const data = await res.json();
       setStats(data.stats);
-    } catch (err) {
+    } catch {
       setError("分析処理中にエラーが発生しました");
-      console.error("Error:", err);
     } finally {
       setLoading(false);
     }
@@ -83,295 +61,231 @@ export default function AnalysisPage() {
 
   async function fetchUploadInfo(token: string) {
     try {
-      const response = await fetch("/api/uploads", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!response.ok) return;
-
-      const result = await response.json();
-      const upload = result.uploads?.find((u: any) => u.id === uploadId);
-      setUploadInfo(upload);
-    } catch (err) {
-      console.error("Error fetching upload info:", err);
-    }
+      const res = await fetch("/api/uploads", { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return;
+      const result = await res.json();
+      setUploadInfo(result.uploads?.find((u: any) => u.id === uploadId));
+    } catch {}
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center min-h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
       </div>
     );
   }
 
-  if (error) {
+  if (error || !stats) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <nav className="bg-white shadow">
-          <div className="container flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-blue-600 py-4">
-              CSV Upload Manager
-            </h1>
-            <Link href="/dashboard" className="btn btn-secondary">
-              ← ダッシュボードに戻る
-            </Link>
-          </div>
-        </nav>
-        <div className="container">
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mt-8">
-            {error}
-          </div>
+      <div className="p-8">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+          {error || "データが見つかりません"}
         </div>
       </div>
     );
   }
 
-  if (!stats) {
-    return null;
-  }
+  // ソート済みカラム
+  const sortedColumns = [...stats.columns].sort((a, b) => {
+    if (!sortByNull) return 0;
+    return parseFloat(stats.field_stats[b]?.null_percent || "0") -
+           parseFloat(stats.field_stats[a]?.null_percent || "0");
+  });
 
-  const categoryData = Object.entries(stats.category_stats).map(([key, value]) => ({
-    name: key,
-    value,
-  }));
+  // 欠損率グラフ（上位10件）
+  const nullChartData = sortedColumns
+    .slice(0, 10)
+    .map((col) => ({
+      name: col.length > 12 ? col.slice(0, 12) + "…" : col,
+      fullName: col,
+      欠損率: parseFloat(stats.field_stats[col]?.null_percent || "0"),
+      欠損数: stats.field_stats[col]?.null_count || 0,
+    }));
 
-  const regionData = Object.entries(stats.region_stats)
-    .map(([key, value]) => ({
-      name: key,
-      count: value,
-    }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10); // Top 10 regions
+  // ジャンル分布
+  const categoryData = Object.entries(stats.category_stats)
+    .map(([name, value]) => ({ name, value }))
+    .filter((d) => d.name !== "不明")
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
 
-  const statusData = [
-    { name: "NG", value: stats.status_stats.ng_count || 0 },
-    { name: "EC投入済", value: stats.status_stats.ec_invested || 0 },
-    { name: "架電対象", value: stats.status_stats.call_target || 0 },
-    { name: "対象外", value: stats.status_stats.exclude_count || 0 },
-    { name: "重複", value: stats.status_stats.duplicates || 0 },
-  ].filter((item) => item.value > 0);
-
-  const nullPercentData = Object.entries(stats.field_stats)
-    .map(([key, value]) => ({
-      name: key,
-      null_percent: parseFloat(value.null_percent),
-    }))
-    .filter((item) => item.null_percent > 0)
-    .sort((a, b) => b.null_percent - a.null_percent)
-    .slice(0, 10); // Top 10 fields with missing data
+  // 総欠損セル数
+  const totalNullCells = stats.columns.reduce(
+    (sum, col) => sum + (stats.field_stats[col]?.null_count || 0), 0
+  );
+  const totalCells = stats.total_rows * stats.columns.length;
+  const overallNullRate = totalCells > 0 ? ((totalNullCells / totalCells) * 100).toFixed(1) : "0.0";
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow">
-        <div className="container flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-blue-600 py-4">
-            CSV Upload Manager
-          </h1>
-          <Link href="/dashboard" className="btn btn-secondary">
-            ← ダッシュボードに戻る
-          </Link>
+    <div className="p-8">
+      {/* ヘッダー */}
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">分析</h1>
+          <p className="text-sm text-gray-500 mt-1">{uploadInfo?.original_filename}</p>
         </div>
-      </nav>
+        <Link
+          href={`/dashboard/export/${uploadId}`}
+          className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          エクスポート
+        </Link>
+      </div>
 
-      <div className="container">
-        <h2 className="text-3xl font-bold text-gray-800 mb-2">
-          📊 データ分析
-        </h2>
-        <p className="text-gray-600 mb-6">
-          {uploadInfo?.original_filename}
-        </p>
+      {/* サマリーカード */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        {[
+          { label: "総行数",   value: stats.total_rows.toLocaleString(), color: "text-blue-700" },
+          { label: "カラム数", value: stats.columns.length,              color: "text-green-700" },
+          { label: "総欠損セル数", value: totalNullCells.toLocaleString(), color: "text-red-600" },
+          { label: "全体欠損率", value: `${overallNullRate}%`,           color: "text-orange-600" },
+        ].map((s) => (
+          <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-5">
+            <p className="text-xs text-gray-400 mb-1">{s.label}</p>
+            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
 
-        {/* Summary Stats */}
-        <div className="grid md:grid-cols-4 gap-4 mb-8">
-          <div className="card">
-            <p className="text-gray-600 text-sm">総行数</p>
-            <p className="text-3xl font-bold text-blue-600">
-              {stats.total_rows.toLocaleString()}
-            </p>
-          </div>
-          <div className="card">
-            <p className="text-gray-600 text-sm">カラム数</p>
-            <p className="text-3xl font-bold text-green-600">
-              {stats.columns.length}
-            </p>
-          </div>
-          <div className="card">
-            <p className="text-gray-600 text-sm">架電対象</p>
-            <p className="text-3xl font-bold text-purple-600">
-              {stats.status_stats.call_target || 0}
-            </p>
-          </div>
-          <div className="card">
-            <p className="text-gray-600 text-sm">重複件数</p>
-            <p className="text-3xl font-bold text-red-600">
-              {stats.status_stats.duplicates || 0}
-            </p>
-          </div>
+      {/* カラム別欠損率グラフ */}
+      {nullChartData.some(d => d.欠損率 > 0) && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+          <h2 className="text-base font-semibold text-gray-900 mb-4">
+            欠損率ランキング（上位10カラム）
+          </h2>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={nullChartData} layout="vertical" margin={{ left: 20, right: 30 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis type="number" unit="%" domain={[0, 100]} tick={{ fontSize: 11 }} />
+              <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11 }} />
+              <Tooltip
+                formatter={(val, _name, props) =>
+                  [`${val}% (${props.payload.欠損数}件)`, "欠損率"]}
+              />
+              <Bar dataKey="欠損率" fill="#ef4444" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
+      )}
 
-        {/* Charts Row 1 */}
-        <div className="grid md:grid-cols-2 gap-6 mb-8">
-          {/* Category Distribution */}
-          <div className="card">
-            <h3 className="text-xl font-bold text-gray-800 mb-4">
-              ジャンル別分布
-            </h3>
-            {categoryData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={categoryData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, value }) => `${name} (${value})`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {categoryData.map((_entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={COLORS[index % COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-gray-500 text-center py-8">
-                データがありません
-              </p>
-            )}
-          </div>
-
-          {/* Status Distribution */}
-          <div className="card">
-            <h3 className="text-xl font-bold text-gray-800 mb-4">
-              ステータス分類
-            </h3>
-            {statusData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={statusData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#8884d8" />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-gray-500 text-center py-8">
-                データがありません
-              </p>
-            )}
-          </div>
+      {/* ジャンル分布 */}
+      {categoryData.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+          <h2 className="text-base font-semibold text-gray-900 mb-4">ジャンル分布</h2>
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie
+                data={categoryData}
+                cx="50%"
+                cy="50%"
+                outerRadius={90}
+                dataKey="value"
+                label={({ name, value }) => `${name}(${value})`}
+                labelLine={false}
+              >
+                {categoryData.map((_, i) => (
+                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
+      )}
 
-        {/* Charts Row 2 */}
-        <div className="grid md:grid-cols-2 gap-6 mb-8">
-          {/* Region Distribution */}
-          <div className="card">
-            <h3 className="text-xl font-bold text-gray-800 mb-4">
-              地域別分布 (Top 10)
-            </h3>
-            {regionData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={regionData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis dataKey="name" type="category" width={80} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#82ca9d" />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-gray-500 text-center py-8">
-                データがありません
-              </p>
-            )}
-          </div>
-
-          {/* Missing Data */}
-          <div className="card">
-            <h3 className="text-xl font-bold text-gray-800 mb-4">
-              欠損データ率 (Top 10)
-            </h3>
-            {nullPercentData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={nullPercentData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" unit="%" />
-                  <YAxis dataKey="name" type="category" width={100} />
-                  <Tooltip formatter={(value) => `${Number(value).toFixed(2)}%`} />
-                  <Bar dataKey="null_percent" fill="#ffc658" />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-gray-500 text-center py-8">
-                欠損データなし
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Field Statistics Table */}
-        <div className="card mb-8">
-          <h3 className="text-xl font-bold text-gray-800 mb-4">
-            フィールド統計
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100 border-b">
-                <tr>
-                  <th className="px-4 py-2 text-left">カラム名</th>
-                  <th className="px-4 py-2 text-left">入力値</th>
-                  <th className="px-4 py-2 text-left">一意値</th>
-                  <th className="px-4 py-2 text-left">空値数</th>
-                  <th className="px-4 py-2 text-left">欠損率</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.columns.slice(0, 15).map((col) => {
-                  const stat = stats.field_stats[col];
-                  return (
-                    <tr key={col} className="border-b hover:bg-gray-50">
-                      <td className="px-4 py-2 font-medium">{col}</td>
-                      <td className="px-4 py-2">{stat.total}</td>
-                      <td className="px-4 py-2">{stat.unique}</td>
-                      <td className="px-4 py-2">{stat.null_count}</td>
-                      <td className="px-4 py-2">
-                        <span
-                          className={
-                            parseFloat(stat.null_percent) > 50
-                              ? "text-red-600 font-medium"
-                              : ""
-                          }
-                        >
-                          {stat.null_percent}%
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="card flex gap-4 justify-center">
-          <Link
-            href={`/dashboard/export/${uploadId}`}
-            className="btn btn-primary"
+      {/* カラム別集計テーブル */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">カラム別集計</h2>
+          <button
+            onClick={() => setSortByNull(!sortByNull)}
+            className="text-xs text-gray-500 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50"
           >
-            📥 セグメント分割してエクスポート
-          </Link>
-          <Link href="/dashboard" className="btn btn-secondary">
-            ダッシュボードに戻る
-          </Link>
+            {sortByNull ? "▼ 欠損率順" : "— 元の順番"}
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">カラム名</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">入力済み</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">一意値</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">欠損数</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{minWidth: 160}}>欠損率</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">代表値（上位3件）</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {sortedColumns.map((col) => {
+                const s = stats.field_stats[col];
+                if (!s) return null;
+                const nullPct = parseFloat(s.null_percent);
+                const isHighNull = nullPct >= 50;
+                const isMedNull = nullPct >= 20 && nullPct < 50;
+                return (
+                  <tr key={col} className="hover:bg-gray-50 transition-colors">
+                    {/* カラム名：クリックで上位値展開 */}
+                    <td className="px-5 py-3.5">
+                      <button
+                        onClick={() => setExpandedCol(expandedCol === col ? null : col)}
+                        className="text-left font-medium text-gray-900 hover:text-blue-700 flex items-center gap-1"
+                      >
+                        {col}
+                        <span className="text-gray-300 text-xs">{expandedCol === col ? "▲" : "▼"}</span>
+                      </button>
+                      {/* 展開：上位値詳細 */}
+                      {expandedCol === col && s.top_values?.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {s.top_values.map((tv, i) => (
+                            <div key={i} className="flex items-center gap-2 text-xs text-gray-500">
+                              <span className="w-4 text-gray-300">{i + 1}.</span>
+                              <span className="font-medium text-gray-700 truncate max-w-40">{tv.value || "（空）"}</span>
+                              <span className="text-gray-400">{tv.count}件</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-right text-gray-600">{s.total.toLocaleString()}</td>
+                    <td className="px-5 py-3.5 text-right text-gray-600">{s.unique.toLocaleString()}</td>
+                    <td className="px-5 py-3.5 text-right">
+                      <span className={isHighNull ? "text-red-600 font-semibold" : isMedNull ? "text-orange-500" : "text-gray-600"}>
+                        {s.null_count.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 bg-gray-100 rounded-full h-1.5 max-w-24">
+                          <div
+                            className={`h-1.5 rounded-full ${isHighNull ? "bg-red-500" : isMedNull ? "bg-orange-400" : "bg-green-400"}`}
+                            style={{ width: `${Math.min(100, nullPct)}%` }}
+                          />
+                        </div>
+                        <span className={`text-xs font-medium ${isHighNull ? "text-red-600" : isMedNull ? "text-orange-500" : "text-gray-500"}`}>
+                          {s.null_percent}%
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex flex-wrap gap-1">
+                        {(s.top_values || []).slice(0, 3).map((tv, i) => (
+                          <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                            {tv.value ? (tv.value.length > 10 ? tv.value.slice(0, 10) + "…" : tv.value) : "（空）"}
+                            <span className="text-gray-400 ml-1">{tv.count}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

@@ -61,8 +61,20 @@ export async function GET(
     // Calculate field statistics
     const field_stats: Record<string, any> = {};
     columns.forEach((col) => {
-      const values = csvData.map((row) => row.data[col]).filter(Boolean);
+      const allValues = csvData.map((row) => row.data[col]);
+      const values = allValues.filter((v) => v !== null && v !== undefined && v !== "");
       const uniqueValues = new Set(values);
+
+      // 上位5件の値カウント
+      const valueCounts: Record<string, number> = {};
+      values.forEach((v) => {
+        const key = String(v);
+        valueCounts[key] = (valueCounts[key] || 0) + 1;
+      });
+      const top_values = Object.entries(valueCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([value, count]) => ({ value, count }));
 
       field_stats[col] = {
         total: values.length,
@@ -72,6 +84,7 @@ export async function GET(
           ((csvData.length - values.length) / csvData.length) *
           100
         ).toFixed(2),
+        top_values,
       };
     });
 
