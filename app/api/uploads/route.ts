@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCSVUploadsByUserId, getDuplicateCount } from "@/lib/db";
+import { getCSVUploadsByUserId } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
@@ -24,18 +24,10 @@ export async function GET(request: NextRequest) {
     // Get uploads
     const uploads = await getCSVUploadsByUserId(decoded.userId);
 
-    // Get duplicate counts for each upload
-    const uploadsWithDuplicates = await Promise.all(
-      uploads.map(async (upload) => ({
-        ...upload,
-        duplicate_count: await getDuplicateCount(upload.id),
-      }))
-    );
-
     return NextResponse.json(
       {
         success: true,
-        uploads: uploadsWithDuplicates,
+        uploads,
       },
       { status: 200 }
     );

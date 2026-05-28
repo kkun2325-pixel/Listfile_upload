@@ -69,9 +69,11 @@ export default function UploadPage() {
         return;
       }
 
-      setSuccess(
-        `アップロード完了（${data.row_count.toLocaleString()} 行、重複 ${data.duplicate_count} 件）`
-      );
+      const parts: string[] = [];
+      if (data.inserted_count > 0) parts.push(`新規追加 ${data.inserted_count.toLocaleString()} 件`);
+      if (data.updated_count  > 0) parts.push(`更新 ${data.updated_count.toLocaleString()} 件`);
+      if (parts.length === 0) parts.push(`${data.row_count.toLocaleString()} 行処理`);
+      setSuccess(`アップロード完了（${parts.join("、")}）`);
       setFile(null);
       setTimeout(() => router.push("/dashboard/history"), 2000);
     } catch {

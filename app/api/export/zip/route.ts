@@ -1,0 +1,132 @@
+import { NextRequest, NextResponse } from "next/server";
+import JSZip from "jszip";
+import { v4 as uuidv4 } from "uuid";
+import {
+  getFilteredRows,
+  saveExportHistory,
+  LIST_COLUMNS,
+  type ExportFilters,
+} from "@/lib/db";
+import { verifyToken, extractToken } from "@/lib/auth";
+import { generateCSV } from "@/lib/csv";
+
+const BOM = "﻿";
+
+// DB実在値（count降順）
+const ALL_TIME_CATEGORIES = [
+  "閉店",
+  "通し午前開始",
+  "業種対象外",
+  "通し午後開始",
+  "情報不足",
+  "14時ランチ終了",
+  "15時ランチ終了",
+  "17時ディナー開始",
+  "掲載保留",
+  "本社×",
+  "通し18時終了",
+  "18時ディナー開始",
+  "19時ディナー開始",
+  "外人×",
+  "16時ディナー開始",
+  "業務対象外",
+];
+
+function buildSeatConditionText(seatMin?: number, seatMax?: number): string {
+  if (seatMin !== undefined && seatMax !== undefined) {
+    if (seatMin === seatMax) return `${seatMin}席`;
+    return `${seatMin}-${seatMax}席`;
+  }
+  if (seatMin !== undefined) return `${seatMin}席以上`;
+  if (seatMax !== undefined) return `${seatMax}席以下`;
+  return "条件なし";
+}
+
+function padListNumber(n: number): string {
+  return String(n).padStart(4, "0");
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const token = extractToken(request.headers.get("authorization"));
+    if (!token) return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
+    if (!verifyToken(token)) return NextResponse.json({ success: false, message: "無効なトークンです" }, { status: 401 });
+
+    const body = await request.json();
+    const filters: ExportFilters = body.filters ?? {};
+    const listGroup: string = body.listGroup ?? "飲食SH";
+    const startListNumber: number = Number(body.startListNumber ?? 1);
+    const exportDate: string = body.exportDate ?? new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+    // 時間振りフィルターを適用した全データを取得
+    const allRows = await getFilteredRows(filters);
+
+    if (allRows.length === 0) {
+      return NextResponse.json({ success: false, message: "該当データが0件です" }, { status: 400 });
+    }
+
+    const headers = [...LIST_COLUMNS];
+
+    // 席数条件テキスト
+    const seatCondition = buildSeatConditionText(filters.seatMin, filters.seatMax);
+
+    // 処理する時間振りカテゴリを決定
+    // timeCategories フィルターが設定されている場合はそれに従い、なければ全DB値を対象
+    const selectedOrAll = (filters.timeCategories && filters.timeCategories.length > 0)
+      ? ALL_TIME_CATEGORIES.filter((c) => filters.timeCategories!.includes(c))
+      : ALL_TIME_CATEGORIES;
+    // データに実際に存在する値も漏れなく含める（定義リスト外の新規値への対応）
+    const uniqueInData = [...new Set(allRows.map((r) => r["時間振り"]).filter(Boolean))];
+    const extraCats = uniqueInData.filter((c) => !selectedOrAll.includes(c));
+    const categoriesToProcess = [...selectedOrAll, ...extraCats];
+
+    const zip = new JSZip();
+    const savedHistory: Promise<void>[] = [];
+    let fileIndex = 0;
+
+    for (const timeCategory of categoriesToProcess) {
+      const categoryRows = allRows.filter((r) => r["時間振り"] === timeCategory);
+      if (categoryRows.length === 0) continue;
+
+      const listNum = startListNumber + fileIndex;
+      fileIndex++;
+
+      const csv = BOM + generateCSV(headers, categoryRows);
+      const fileName = `${padListNumber(listNum)}【${listGroup}】${timeCategory}_${seatCondition}_${exportDate}.csv`;
+      zip.file(fileName, csv);
+
+      savedHistory.push(
+        saveExportHistory(
+          uuidv4(),
+          listNum,
+          listGroup,
+          timeCategory,
+          seatCondition,
+          exportDate,
+          fileName,
+          categoryRows.length
+        )
+      );
+    }
+
+    if (fileIndex === 0) {
+      return NextResponse.json({ success: false, message: "該当する時間振りデータが0件です" }, { status: 400 });
+    }
+
+    await Promise.all(savedHistory);
+
+    const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+    const zipFileName = `飲食_エクスポート_${exportDate}.zip`;
+
+    return new NextResponse(new Uint8Array(zipBuffer), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(zipFileName)}`,
+      },
+    });
+  } catch (error) {
+    console.error("ZIP export error:", error);
+    return NextResponse.json({ success: false, message: "ZIPエクスポート処理中にエラーが発生しました" }, { status: 500 });
+  }
+}

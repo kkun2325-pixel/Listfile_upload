@@ -9,6 +9,8 @@ interface HistoryItem {
   username: string;
   original_filename: string;
   row_count: number;
+  inserted_count: number;
+  updated_count: number;
   fill_count: number;
   uploaded_at: string;
   status: string;
@@ -18,7 +20,7 @@ export default function HistoryPage() {
   const router = useRouter();
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError]     = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
@@ -53,14 +55,14 @@ export default function HistoryPage() {
     );
   }
 
+  const totalInserted = history.reduce((s, h) => s + h.inserted_count, 0);
+  const totalUpdated  = history.reduce((s, h) => s + h.updated_count,  0);
+
   return (
     <div className="p-8">
-      {/* ヘッダー */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">アップロード履歴</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          全ユーザーのアップロード履歴
-        </p>
+        <p className="text-sm text-gray-500 mt-1">全ユーザーのアップロード履歴</p>
       </div>
 
       {error && (
@@ -81,71 +83,89 @@ export default function HistoryPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ユーザー名</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ファイル名</th>
-                <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">件数</th>
-                <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  <span title="全カラム・全行の入力済みセル数">充填数</span>
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">アップロード日時</th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {history.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600">
-                        {item.username.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="text-gray-700 font-medium">{item.username}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 font-medium text-gray-900 max-w-xs truncate">
-                    {item.original_filename}
-                  </td>
-                  <td className="px-5 py-3.5 text-right text-gray-600">
-                    {item.row_count.toLocaleString()} 行
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <span className="text-blue-700 font-semibold">
-                      {item.fill_count.toLocaleString()}
-                    </span>
-                    <span className="text-gray-400 text-xs ml-1">セル</span>
-                  </td>
-                  <td className="px-5 py-3.5 text-gray-500">
-                    {new Date(item.uploaded_at).toLocaleString("ja-JP")}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2">
-                      <Link
-                        href={`/dashboard/export/${item.id}`}
-                        className="text-xs text-gray-600 border border-gray-200 px-2.5 py-1 rounded hover:bg-gray-50 transition-colors"
-                      >
-                        エクスポート
-                      </Link>
-                      <Link
-                        href={`/dashboard/analysis/${item.id}`}
-                        className="text-xs text-gray-600 border border-gray-200 px-2.5 py-1 rounded hover:bg-gray-50 transition-colors"
-                      >
-                        分析
-                      </Link>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">ユーザー名</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">ファイル名</th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 whitespace-nowrap">行数</th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 whitespace-nowrap">
+                    <span className="text-green-700">新規追加</span>
+                  </th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 whitespace-nowrap">
+                    <span className="text-blue-700">更新件数</span>
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">アップロード日時</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {history.map((item) => (
+                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600">
+                          {item.username.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-gray-700 font-medium">{item.username}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 font-medium text-gray-900 max-w-xs truncate">
+                      {item.original_filename}
+                    </td>
+                    <td className="px-5 py-3.5 text-right text-gray-500 text-xs">
+                      {item.row_count.toLocaleString()} 行
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      {item.inserted_count > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                          +{item.inserted_count.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      {item.updated_count > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                          ↻{item.updated_count.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-gray-500 text-xs whitespace-nowrap">
+                      {new Date(item.uploaded_at).toLocaleString("ja-JP")}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/dashboard/export/${item.id}`}
+                          className="text-xs text-gray-600 border border-gray-200 px-2.5 py-1 rounded hover:bg-gray-50 transition-colors"
+                        >
+                          エクスポート
+                        </Link>
+                        <Link
+                          href={`/dashboard/analysis/${item.id}`}
+                          className="text-xs text-gray-600 border border-gray-200 px-2.5 py-1 rounded hover:bg-gray-50 transition-colors"
+                        >
+                          分析
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           {/* フッター統計 */}
-          <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 flex items-center gap-6 text-xs text-gray-500">
-            <span>合計 {history.length} 件</span>
+          <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 flex flex-wrap items-center gap-6 text-xs text-gray-500">
+            <span>合計 {history.length} 件のアップロード</span>
             <span>総行数 {history.reduce((s, h) => s + h.row_count, 0).toLocaleString()} 行</span>
-            <span>総充填数 {history.reduce((s, h) => s + h.fill_count, 0).toLocaleString()} セル</span>
+            <span className="text-green-700 font-medium">新規追加 {totalInserted.toLocaleString()} 件</span>
+            <span className="text-blue-700 font-medium">更新 {totalUpdated.toLocaleString()} 件</span>
           </div>
         </div>
       )}

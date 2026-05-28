@@ -8,46 +8,35 @@ import {
 } from "recharts";
 
 interface Stats {
-  callable: number;
-  non_callable: number;
-  callable_rate: number;
-  ec_ready: number;
   total: number;
+  seisa_count: number;
+  unseisa_count: number;
+  seisa_rate: number;
+  tel_count: number;
 }
+interface PieItem { name: string; value: number; color: string }
 
-interface PieItem {
-  name: string;
-  value: number;
-  color: string;
-}
+const PREVIEW_COLS = ["ID", "名前", "電話番号", "住所1", "ジャンル", "時間振り"];
 
-const PREVIEW_COLUMNS = ["名前", "電話番号", "住所１", "ジャンル", "架電対象フラグ"];
-
-const StatCard = ({
+function StatCard({
   label, value, sub, color,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-  color: string;
-}) => (
-  <div className="bg-white rounded-xl border border-gray-200 p-5">
-    <p className="text-xs text-gray-400 mb-2">{label}</p>
-    <p className={`text-3xl font-bold ${color}`}>{value}</p>
-    {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
-  </div>
-);
+}: { label: string; value: string | number; sub?: string; color: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <p className="text-xs text-gray-400 mb-2">{label}</p>
+      <p className={`text-2xl font-bold ${color}`}>{value}</p>
+      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [stats, setStats]     = useState<Stats | null>(null);
   const [pieData, setPieData] = useState<PieItem[]>([]);
   const [preview, setPreview] = useState<Record<string, string>[]>([]);
-  const [filename, setFilename] = useState<string | null>(null);
-  const [uploadedAt, setUploadedAt] = useState<string | null>(null);
-  const [columnsFound, setColumnsFound] = useState<{ flag: string | null; ec: string | null }>({ flag: null, ec: null });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError]     = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
@@ -64,9 +53,6 @@ export default function DashboardPage() {
         setStats(data.stats);
         setPieData(data.pie_data);
         setPreview(data.preview);
-        setFilename(data.filename);
-        setUploadedAt(data.uploaded_at);
-        setColumnsFound(data.columns_found);
       })
       .catch(() => setError("データ取得に失敗しました"))
       .finally(() => setLoading(false));
@@ -80,36 +66,24 @@ export default function DashboardPage() {
     );
   }
 
+  const noData = !stats || stats.total === 0;
+
   return (
     <div className="p-8">
-      {/* ヘッダー */}
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
-          {filename ? (
-            <p className="text-sm text-gray-500 mt-1">
-              最新ファイル：{filename}
-              {uploadedAt && (
-                <span className="ml-2 text-gray-400">
-                  ({new Date(uploadedAt).toLocaleString("ja-JP")})
-                </span>
-              )}
-            </p>
-          ) : (
-            <p className="text-sm text-gray-400 mt-1">アップロード済みのファイルがありません</p>
-          )}
+          <p className="text-sm text-gray-500 mt-1">全データの統合統計</p>
         </div>
-        {filename && (
-          <Link
-            href="/dashboard/upload"
-            className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-            </svg>
-            新しいファイルをアップロード
-          </Link>
-        )}
+        <Link
+          href="/dashboard/upload"
+          className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          </svg>
+          アップロード
+        </Link>
       </div>
 
       {error && (
@@ -118,69 +92,59 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {!filename ? (
-        /* アップロードなし */
+      {noData ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-12 h-12 text-gray-300 mx-auto mb-4">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}
+            className="w-12 h-12 text-gray-300 mx-auto mb-4">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
           </svg>
-          <p className="text-gray-400 text-sm mb-4">CSVファイルをアップロードしてダッシュボードを表示します</p>
-          <Link href="/dashboard/upload" className="inline-block px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700">
+          <p className="text-gray-400 text-sm mb-4">データがまだありません。CSVをアップロードしてください</p>
+          <Link href="/dashboard/upload"
+            className="inline-block px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700">
             ファイルをアップロード
           </Link>
         </div>
       ) : (
         <>
-          {/* カラム検出ステータス */}
-          {!columnsFound.flag && stats && stats.total > 0 && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg mb-6 text-sm">
-              ⚠️ 「架電対象フラグ」カラムが見つかりませんでした。CSVのカラム名を確認してください。
-            </div>
-          )}
-
           {/* ─── サマリーカード ─── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
             <StatCard
-              label="架電可能数"
-              value={stats?.callable.toLocaleString() ?? "—"}
-              sub={`全体の ${stats?.callable_rate ?? 0}%`}
+              label="総データ数"
+              value={stats!.total.toLocaleString()}
+              sub="全アップロード合計"
+              color="text-gray-800"
+            />
+            <StatCard
+              label="時間振り済み"
+              value={stats!.seisa_count.toLocaleString()}
+              sub="時間振りカラム有り"
               color="text-blue-600"
             />
             <StatCard
-              label="架電対象外数"
-              value={stats?.non_callable.toLocaleString() ?? "—"}
-              sub={`全体の ${stats && stats.total > 0 ? ((stats.non_callable / stats.total) * 100).toFixed(1) : 0}%`}
-              color="text-red-500"
-            />
-            <StatCard
-              label="架電可能割合"
-              value={`${stats?.callable_rate ?? 0}%`}
-              sub={`総件数 ${stats?.total.toLocaleString() ?? 0} 件`}
+              label="精査率"
+              value={`${stats!.seisa_rate}%`}
+              sub="時間振り済み / 総数"
               color="text-green-600"
             />
             <StatCard
-              label="エバーコール投入可能数"
-              value={stats?.ec_ready.toLocaleString() ?? "—"}
-              sub={columnsFound.ec ? `${columnsFound.ec} 列が空白かつ架電可` : "EC列未検出"}
+              label="電話番号有り"
+              value={stats!.tel_count.toLocaleString()}
+              sub="電話番号カラム有り"
               color="text-purple-600"
             />
           </div>
 
-          {/* ─── 円グラフ ─── */}
+          {/* ─── 精査状況 円グラフ ─── */}
           <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
-            <h2 className="text-base font-semibold text-gray-900 mb-4">
-              架電可能 vs 対象外 の割合
-            </h2>
+            <h2 className="text-base font-semibold text-gray-900 mb-5">精査状況（時間振り）</h2>
             {pieData.length > 0 ? (
               <div className="flex flex-col md:flex-row items-center gap-8">
-                <ResponsiveContainer width="100%" height={260} className="max-w-sm">
+                <ResponsiveContainer width="100%" height={240} className="max-w-xs">
                   <PieChart>
                     <Pie
                       data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
+                      cx="50%" cy="50%"
+                      innerRadius={55} outerRadius={95}
                       paddingAngle={2}
                       dataKey="value"
                     >
@@ -188,23 +152,19 @@ export default function DashboardPage() {
                         <Cell key={i} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(val) => [String(val).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " 件", ""]} />
+                    <Tooltip formatter={(val) => [`${Number(val).toLocaleString()} 件`, ""]} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
 
-                {/* 凡例テーブル */}
-                <div className="flex-1 space-y-3">
+                <div className="flex-1 space-y-3 min-w-0">
                   {pieData.map((item) => (
-                    <div key={item.name} className="flex items-center justify-between">
+                    <div key={item.name} className="flex items-center justify-between gap-4">
                       <div className="flex items-center gap-2">
-                        <span
-                          className="w-3 h-3 rounded-full shrink-0"
-                          style={{ backgroundColor: item.color }}
-                        />
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
                         <span className="text-sm text-gray-700">{item.name}</span>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right shrink-0">
                         <span className="text-sm font-semibold text-gray-900">
                           {item.value.toLocaleString()} 件
                         </span>
@@ -219,9 +179,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-gray-400 text-sm text-center py-8">
-                「架電対象フラグ」カラムのデータがありません
-              </p>
+              <p className="text-gray-400 text-sm text-center py-8">データがありません</p>
             )}
           </div>
 
@@ -232,7 +190,7 @@ export default function DashboardPage() {
                 データプレビュー
                 <span className="text-sm font-normal text-gray-400 ml-2">（先頭20件）</span>
               </h2>
-              <span className="text-xs text-gray-400">{filename}</span>
+              <span className="text-xs text-gray-400">全 {stats!.total.toLocaleString()} 件より</span>
             </div>
 
             {preview.length === 0 ? (
@@ -242,9 +200,9 @@ export default function DashboardPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider w-8">#</th>
-                      {PREVIEW_COLUMNS.map((col) => (
-                        <th key={col} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 w-8">#</th>
+                      {PREVIEW_COLS.map((col) => (
+                        <th key={col} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">
                           {col}
                         </th>
                       ))}
@@ -252,24 +210,16 @@ export default function DashboardPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {preview.map((row, i) => (
-                      <tr key={i} className="hover:bg-gray-50 transition-colors">
+                      <tr key={i} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-gray-300 text-xs">{i + 1}</td>
-                        {PREVIEW_COLUMNS.map((col) => {
+                        {PREVIEW_COLS.map((col) => {
                           const val = row[col];
-                          const isFlag = col === "架電対象フラグ";
+                          const isTime = col === "時間振り";
                           return (
                             <td key={col} className="px-4 py-3 text-gray-700 max-w-xs truncate">
-                              {isFlag ? (
-                                <span
-                                  className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                                    val === "1"
-                                      ? "bg-blue-100 text-blue-700"
-                                      : val === "0"
-                                      ? "bg-red-100 text-red-600"
-                                      : "bg-gray-100 text-gray-500"
-                                  }`}
-                                >
-                                  {val === "1" ? "架電可" : val === "0" ? "対象外" : val || "—"}
+                              {isTime && val ? (
+                                <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                                  {val}
                                 </span>
                               ) : (
                                 val || <span className="text-gray-300">—</span>

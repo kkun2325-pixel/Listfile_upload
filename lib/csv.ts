@@ -43,15 +43,29 @@ export function generateCSV(
 }
 
 export function extractPhoneNumber(data: Record<string, string>): string | null {
-  const phoneColumns = ["phone", "phone_number", "tel", "telephone", "携帯", "電話"];
+  const phoneColumns = ["電話番号", "phone", "phone_number", "tel", "telephone", "携帯", "電話"];
   for (const column of phoneColumns) {
     const value = data[column];
-    if (value) {
-      const cleaned = value.replace(/\D/g, "");
-      if (cleaned.length > 0) return cleaned;
-    }
+    if (value && value.trim()) return value.trim();
   }
   return null;
+}
+
+// 精査ファイルのカラム名をリストDBのカラム名に正規化
+export function mapCsvColumnsToDb(row: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (key === "住所１") {
+      result["住所1"] = value;
+    } else if (key === "住所２") {
+      result["住所2"] = value;
+    } else if (key === "番号確認") {
+      result["電話番号確認"] = value;
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
 }
 
 export function validateCSV(
