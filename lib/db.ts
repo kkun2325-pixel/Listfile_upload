@@ -897,6 +897,17 @@ export async function bulkInsertEverycallInvested(
   return { inserted, skipped: phones.length - inserted }
 }
 
+// everycall_invested を全削除（再インポート前のリセット用）
+export async function purgeEverycallInvested(): Promise<{ deleted: number }> {
+  await ensureEverycallInvestedTable()
+  const sql = getSQL()
+  const result = await sql`
+    WITH del AS (DELETE FROM everycall_invested RETURNING 1)
+    SELECT COUNT(*)::integer AS deleted FROM del
+  `
+  return { deleted: Number(result[0]?.deleted ?? 0) }
+}
+
 // csv_dataに存在しない行を削除（容量クリーンアップ）
 export async function cleanupEverycallInvested(): Promise<{ deleted: number }> {
   await ensureEverycallInvestedTable()

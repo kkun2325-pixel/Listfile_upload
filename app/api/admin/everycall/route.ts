@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bulkInsertEverycallInvested, getEverycallInvestedStats, cleanupEverycallInvested } from "@/lib/db";
+import { bulkInsertEverycallInvested, getEverycallInvestedStats, cleanupEverycallInvested, purgeEverycallInvested } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
 
 // GET: グループ別投入済み件数を返す
@@ -51,12 +51,21 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE: csv_dataに存在しないレコードを削除（容量クリーンアップ）
+// DELETE: クリーンアップ or 全削除
+// ?purge=true → 全削除（TRUNCATE相当）
+// ?purge=false (default) → csv_dataに存在しない行を削除
 export async function DELETE(request: NextRequest) {
   try {
     const token = extractToken(request.headers.get("authorization"));
     if (!token) return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
     if (!verifyToken(token)) return NextResponse.json({ success: false, message: "無効なトークンです" }, { status: 401 });
+
+    const purge = request.nextUrl.searchParams.get("purge") === "true";
+
+    if (purge) {
+      const result = await purgeEverycallInvested();
+      return NextResponse.json({ success: true, ...result });
+    }
 
     const result = await cleanupEverycallInvested();
     return NextResponse.json({ success: true, ...result });
