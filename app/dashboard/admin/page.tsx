@@ -31,6 +31,57 @@ function parsePhoneNumbersFromCSV(text: string): string[] {
   return phones
 }
 
+function CleanupButton() {
+  const [status, setStatus] = useState<Status>("idle");
+  const [msg, setMsg] = useState("");
+
+  async function handleCleanup() {
+    setStatus("running");
+    setMsg("");
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch("/api/admin/everycall", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStatus("success");
+        setMsg(`削除完了: ${(data.deleted ?? 0).toLocaleString()} 件`);
+      } else {
+        setStatus("error");
+        setMsg(data.message || "クリーンアップに失敗しました");
+      }
+    } catch (e) {
+      setStatus("error");
+      setMsg(String(e));
+    }
+  }
+
+  const alertClass: Record<Status, string> = {
+    idle: "", running: "bg-yellow-50 border border-yellow-200 text-yellow-800",
+    success: "bg-green-50 border border-green-200 text-green-800",
+    error: "bg-red-50 border border-red-200 text-red-700",
+  };
+
+  return (
+    <div>
+      <button
+        onClick={handleCleanup}
+        disabled={status === "running"}
+        className="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-lg hover:bg-orange-700 disabled:opacity-40 transition-colors"
+      >
+        {status === "running" ? "クリーンアップ中..." : "不要データを削除"}
+      </button>
+      {status !== "idle" && msg && (
+        <div className={`mt-2 rounded-lg px-3 py-2 text-sm ${alertClass[status]}`}>
+          {msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const router = useRouter();
 
@@ -220,6 +271,14 @@ export default function AdminPage() {
               })}
             </div>
           )}
+        </div>
+
+        {/* クリーンアップ */}
+        <div className="mb-5 pb-5 border-b border-gray-100">
+          <p className="text-xs text-gray-500 mb-2">
+            csv_dataに存在しない電話番号をeverycall_investedから削除します（DB容量節約）
+          </p>
+          <CleanupButton />
         </div>
 
         {/* アップロードフォーム */}

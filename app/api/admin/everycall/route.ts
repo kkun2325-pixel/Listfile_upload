@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bulkInsertEverycallInvested, getEverycallInvestedStats } from "@/lib/db";
+import { bulkInsertEverycallInvested, getEverycallInvestedStats, cleanupEverycallInvested } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
 
 // GET: グループ別投入済み件数を返す
@@ -47,6 +47,22 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error("Everycall POST error:", error);
+    return NextResponse.json({ success: false, message: msg }, { status: 500 });
+  }
+}
+
+// DELETE: csv_dataに存在しないレコードを削除（容量クリーンアップ）
+export async function DELETE(request: NextRequest) {
+  try {
+    const token = extractToken(request.headers.get("authorization"));
+    if (!token) return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
+    if (!verifyToken(token)) return NextResponse.json({ success: false, message: "無効なトークンです" }, { status: 401 });
+
+    const result = await cleanupEverycallInvested();
+    return NextResponse.json({ success: true, ...result });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Everycall DELETE error:", error);
     return NextResponse.json({ success: false, message: msg }, { status: 500 });
   }
 }

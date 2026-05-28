@@ -881,13 +881,37 @@ export async function bulkInsertEverycallInvested(
   await ensureEverycallInvestedTable()
   const sql = getSQL()
   const now = new Date().toISOString()
-  // UNNEST で一括挿入、重複は SKIP
-  await sql`
-    INSERT INTO everycall_invested (phone_number, list_group, invested_at, created_at)
-    SELECT UNNEST(${phones}::text[]), ${listGroup}, ${investedAt}, ${now}
-    ON CONFLICT (phone_number, list_group) DO NOTHING
+  // csv_data に存在する電話番号のみ挿入（容量節約）
+  const result = await sql`
+    WITH inserted AS (
+      INSERT INTO everycall_invested (phone_number, list_group, invested_at, created_at)
+      SELECT p.phone, ${listGroup}, ${investedAt}, ${now}
+      FROM UNNEST(${phones}::text[]) AS p(phone)
+      WHERE EXISTS (SELECT 1 FROM csv_data WHERE csv_data."電話番号" = p.phone)
+      ON CONFLICT (phone_number, list_group) DO NOTHING
+      RETURNING 1
+    )
+    SELECT COUNT(*)::integer AS cnt FROM inserted
   `
-  return { inserted: phones.length, skipped: 0 }
+  const inserted = Number(result[0]?.cnt ?? 0)
+  return { inserted, skipped: phones.length - inserted }
+}
+
+// csv_dataに存在しない行を削除（容量クリーンアップ）
+export async function cleanupEverycallInvested(): Promise<{ deleted: number }> {
+  await ensureEverycallInvestedTable()
+  const sql = getSQL()
+  const result = await sql`
+    WITH del AS (
+      DELETE FROM everycall_invested
+      WHERE NOT EXISTS (
+        SELECT 1 FROM csv_data WHERE csv_data."電話番号" = everycall_invested.phone_number
+      )
+      RETURNING 1
+    )
+    SELECT COUNT(*)::integer AS deleted FROM del
+  `
+  return { deleted: Number(result[0]?.deleted ?? 0) }
 }
 
 export async function getEverycallInvestedStats(): Promise<
