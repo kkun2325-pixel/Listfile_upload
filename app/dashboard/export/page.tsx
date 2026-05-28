@@ -65,6 +65,7 @@ interface ExportFilters {
   seatMin: string;
   seatMax: string;
   bikou: string[];
+  excludeInvested: boolean;
 }
 
 interface TimeCategoryItem { name: string; count: number }
@@ -75,7 +76,7 @@ interface HistoryItem {
   seat_condition: string; export_date: string; file_name: string; row_count: number; created_at: string
 }
 
-const EMPTY_FILTERS: ExportFilters = { genres: [], timeCategories: [], seatMin: "", seatMax: "", bikou: [] };
+const EMPTY_FILTERS: ExportFilters = { genres: [], timeCategories: [], seatMin: "", seatMax: "", bikou: [], excludeInvested: false };
 
 function todayYMD() { return new Date().toISOString().slice(0, 10).replace(/-/g, ""); }
 
@@ -218,6 +219,7 @@ export default function ExportPage() {
       f.bikou.forEach((b) => sp.append("bikou", b));
       if (f.seatMin) sp.set("seatMin", f.seatMin);
       if (f.seatMax) sp.set("seatMax", f.seatMax);
+      if (f.excludeInvested) sp.set("excludeInvested", "true");
 
       const res = await fetch(`/api/export/preview?${sp}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -296,6 +298,7 @@ export default function ExportPage() {
             seatMin: filters.seatMin ? Number(filters.seatMin) : undefined,
             seatMax: filters.seatMax ? Number(filters.seatMax) : undefined,
             bikou: filters.bikou.length > 0 ? filters.bikou : undefined,
+            excludeInvested: filters.excludeInvested || undefined,
           },
           listGroup,
           startListNumber: startNum,
@@ -340,6 +343,7 @@ export default function ExportPage() {
             seatMin: filters.seatMin ? Number(filters.seatMin) : undefined,
             seatMax: filters.seatMax ? Number(filters.seatMax) : undefined,
             bikou: filters.bikou.length > 0 ? filters.bikou : undefined,
+            excludeInvested: filters.excludeInvested || undefined,
           },
           fileName: `飲食_架電リスト_${today}.csv`,
         }),
@@ -367,7 +371,7 @@ export default function ExportPage() {
   // ─── 計算値 ─────────────────────────────────────────────
   const seatConditionText = buildSeatConditionText(filters.seatMin, filters.seatMax);
   const hasAnyFilter = filters.genres.length > 0 || filters.timeCategories.length > 0 ||
-    filters.seatMin !== "" || filters.seatMax !== "" || filters.bikou.length > 0;
+    filters.seatMin !== "" || filters.seatMax !== "" || filters.bikou.length > 0 || filters.excludeInvested;
   const startNum = parseInt(startListNumber) || 1;
   const isStartNumValid = !isNaN(parseInt(startListNumber)) && parseInt(startListNumber) >= 1 && parseInt(startListNumber) <= 9999;
 
@@ -503,6 +507,22 @@ export default function ExportPage() {
               placeholder="すべて（選択なし）"
             />
           </div>
+        </div>
+
+        {/* 投入済み除外チェック */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={filters.excludeInvested}
+              onChange={(e) => setFilter("excludeInvested", e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            />
+            <span className="text-sm text-gray-700">
+              Everycall投入済みを除外
+              <span className="ml-1.5 text-xs text-gray-400">（everycall_invested に登録された番号を対象外にする）</span>
+            </span>
+          </label>
         </div>
       </div>
 

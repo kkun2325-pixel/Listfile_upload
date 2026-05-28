@@ -512,7 +512,7 @@ export interface DashboardStatsV2 {
   list_rank_distribution: { rank: string; count: number }[]
 }
 
-function processGroupRows(rows: Record<string, unknown>[]): GroupStat {
+function processRankRows(rows: Record<string, unknown>[]): { rank: string; count: number }[] {
   const counts: Record<string, number> = {}
   for (const row of rows) {
     const val = row.rank_val
@@ -520,25 +520,26 @@ function processGroupRows(rows: Record<string, unknown>[]): GroupStat {
     const key = (val === null || val === undefined || String(val).trim() === '') ? '0' : String(val).trim()
     counts[key] = (counts[key] ?? 0) + cnt
   }
-  let tokunyu = 0, mitorunyu = 0
-  for (const [rank, cnt] of Object.entries(counts)) {
-    const n = parseInt(rank, 10)
-    if (isNaN(n) || n <= 0) mitorunyu += cnt
-    else tokunyu += cnt
-  }
-  const rank_distribution = Object.entries(counts)
+  return Object.entries(counts)
     .map(([rank, count]) => ({ rank, count }))
     .sort((a, b) => {
       const na = parseInt(a.rank, 10), nb = parseInt(b.rank, 10)
       return (isNaN(na) ? 0 : na) - (isNaN(nb) ? 0 : nb)
     })
-  return { tokunyu, mitorunyu, rank_distribution }
 }
 
 export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
   const sql = getSQL()
 
-  const [summaryRes, g1, g2, g3, g4, listRankRes] = await Promise.all([
+  // everycall_invested テーブルを確保（初回のみ作成）
+  try { await ensureEverycallInvestedTable() } catch { /* 無視 */ }
+
+  const [
+    summaryRes,
+    g1Rank, g2Rank, g3Rank, g4Rank,
+    listRankRes,
+    g1Inv, g2Inv, g3Inv, g4Inv,
+  ] = await Promise.all([
     sql`
       SELECT
         COUNT(*)::integer AS total,
@@ -564,6 +565,7 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
         SUM(CASE WHEN "備考"     IS NULL OR "備考"     = '' THEN 1 ELSE 0 END)::integer AS missing_bikou
       FROM csv_data
     `,
+    // グループ別結果ランク分布（既存カラムから）
     sql`SELECT "飲食SH最大進捗"      AS rank_val, COUNT(*)::integer AS cnt FROM csv_data GROUP BY "飲食SH最大進捗"`,
     sql`SELECT "サイネ"               AS rank_val, COUNT(*)::integer AS cnt FROM csv_data GROUP BY "サイネ"`,
     sql`SELECT "デリバリー最大進捗"   AS rank_val, COUNT(*)::integer AS cnt FROM csv_data GROUP BY "デリバリー最大進捗"`,
@@ -574,9 +576,47 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
       WHERE "リストランク" IS NOT NULL AND "リストランク" != ''
       GROUP BY "リストランク"
     `,
+    // everycall_invested テーブルを使った投入済/未投入カウント
+    sql`
+      SELECT
+        COUNT(CASE WHEN ei.phone_number IS NOT NULL THEN 1 END)::integer AS tokunyu,
+        COUNT(CASE WHEN ei.phone_number IS NULL     THEN 1 END)::integer AS mitorunyu
+      FROM csv_data cd
+      LEFT JOIN everycall_invested ei
+        ON ei.phone_number = cd."電話番号" AND ei.list_group = '飲食SH'
+    `,
+    sql`
+      SELECT
+        COUNT(CASE WHEN ei.phone_number IS NOT NULL THEN 1 END)::integer AS tokunyu,
+        COUNT(CASE WHEN ei.phone_number IS NULL     THEN 1 END)::integer AS mitorunyu
+      FROM csv_data cd
+      LEFT JOIN everycall_invested ei
+        ON ei.phone_number = cd."電話番号" AND ei.list_group = 'サイネージ'
+    `,
+    sql`
+      SELECT
+        COUNT(CASE WHEN ei.phone_number IS NOT NULL THEN 1 END)::integer AS tokunyu,
+        COUNT(CASE WHEN ei.phone_number IS NULL     THEN 1 END)::integer AS mitorunyu
+      FROM csv_data cd
+      LEFT JOIN everycall_invested ei
+        ON ei.phone_number = cd."電話番号" AND ei.list_group = 'デリバリー'
+    `,
+    sql`
+      SELECT
+        COUNT(CASE WHEN ei.phone_number IS NOT NULL THEN 1 END)::integer AS tokunyu,
+        COUNT(CASE WHEN ei.phone_number IS NULL     THEN 1 END)::integer AS mitorunyu
+      FROM csv_data cd
+      LEFT JOIN everycall_invested ei
+        ON ei.phone_number = cd."電話番号" AND ei.list_group = 'ペイメント'
+    `,
   ])
 
-  const s = summaryRes[0] ?? {}
+  const s  = summaryRes[0] ?? {}
+  const i1 = g1Inv[0] ?? {}
+  const i2 = g2Inv[0] ?? {}
+  const i3 = g3Inv[0] ?? {}
+  const i4 = g4Inv[0] ?? {}
+
   return {
     total:         Number(s.total         ?? 0),
     seisa_count:   Number(s.seisa_count   ?? 0),
@@ -589,10 +629,10 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
       bikou:     Number(s.missing_bikou     ?? 0),
     },
     groups: {
-      '飲食SH':    processGroupRows(g1 as Record<string, unknown>[]),
-      'サイネージ': processGroupRows(g2 as Record<string, unknown>[]),
-      'デリバリー': processGroupRows(g3 as Record<string, unknown>[]),
-      'ペイメント': processGroupRows(g4 as Record<string, unknown>[]),
+      '飲食SH':    { tokunyu: Number(i1.tokunyu ?? 0), mitorunyu: Number(i1.mitorunyu ?? 0), rank_distribution: processRankRows(g1Rank as Record<string, unknown>[]) },
+      'サイネージ': { tokunyu: Number(i2.tokunyu ?? 0), mitorunyu: Number(i2.mitorunyu ?? 0), rank_distribution: processRankRows(g2Rank as Record<string, unknown>[]) },
+      'デリバリー': { tokunyu: Number(i3.tokunyu ?? 0), mitorunyu: Number(i3.mitorunyu ?? 0), rank_distribution: processRankRows(g3Rank as Record<string, unknown>[]) },
+      'ペイメント': { tokunyu: Number(i4.tokunyu ?? 0), mitorunyu: Number(i4.mitorunyu ?? 0), rank_distribution: processRankRows(g4Rank as Record<string, unknown>[]) },
     },
     list_rank_distribution: (listRankRes as Record<string, unknown>[])
       .map(r => ({ rank: String(r.rank_val), count: Number(r.cnt) }))
@@ -813,6 +853,63 @@ export async function getAllCSVUploadsWithUsers() {
   `
 }
 
+// ── エバーコール投入済テーブル ────────────────────────────
+
+async function ensureEverycallInvestedTable() {
+  const sql = getSQL()
+  await sql`
+    CREATE TABLE IF NOT EXISTS everycall_invested (
+      id           BIGSERIAL PRIMARY KEY,
+      phone_number TEXT NOT NULL,
+      list_group   TEXT NOT NULL,
+      invested_at  TEXT NOT NULL,
+      created_at   TEXT NOT NULL,
+      CONSTRAINT everycall_invested_uniq UNIQUE (phone_number, list_group)
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS idx_everycall_phone ON everycall_invested(phone_number)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_everycall_group_phone ON everycall_invested(list_group, phone_number)`
+}
+
+export async function bulkInsertEverycallInvested(
+  phoneNumbers: string[],
+  listGroup: string,
+  investedAt: string,
+): Promise<{ inserted: number; skipped: number }> {
+  const phones = phoneNumbers.map(p => p.trim()).filter(Boolean)
+  if (phones.length === 0) return { inserted: 0, skipped: 0 }
+  await ensureEverycallInvestedTable()
+  const sql = getSQL()
+  const now = new Date().toISOString()
+  // UNNEST で一括挿入、重複は SKIP
+  await sql`
+    INSERT INTO everycall_invested (phone_number, list_group, invested_at, created_at)
+    SELECT UNNEST(${phones}::text[]), ${listGroup}, ${investedAt}, ${now}
+    ON CONFLICT (phone_number, list_group) DO NOTHING
+  `
+  return { inserted: phones.length, skipped: 0 }
+}
+
+export async function getEverycallInvestedStats(): Promise<
+  { list_group: string; count: number; latest_invested_at: string }[]
+> {
+  try {
+    await ensureEverycallInvestedTable()
+    const sql = getSQL()
+    const rows = await sql`
+      SELECT list_group, COUNT(*)::integer AS count, MAX(invested_at) AS latest_invested_at
+      FROM everycall_invested
+      GROUP BY list_group
+      ORDER BY list_group
+    `
+    return rows.map(r => ({
+      list_group:         String(r.list_group),
+      count:              Number(r.count),
+      latest_invested_at: String(r.latest_invested_at),
+    }))
+  } catch { return [] }
+}
+
 // ── エクスポート用フィルター ───────────────────────────────
 
 export interface ExportFilters {
@@ -821,6 +918,7 @@ export interface ExportFilters {
   seatMin?: number
   seatMax?: number
   bikou?: string[]
+  excludeInvested?: boolean   // true = everycall_invested に存在するものを除外
 }
 
 function toArrayOrNull<T>(arr: T[] | undefined): T[] | null {
@@ -834,6 +932,7 @@ export async function getFilteredCount(filters: ExportFilters): Promise<number> 
   const bikou          = toArrayOrNull(filters.bikou)
   const seatMin = (filters.seatMin !== undefined && !isNaN(filters.seatMin)) ? filters.seatMin : null
   const seatMax = (filters.seatMax !== undefined && !isNaN(filters.seatMax)) ? filters.seatMax : null
+  const excl = filters.excludeInvested === true
 
   const rows = await sql`
     SELECT COUNT(*)::integer as count FROM csv_data
@@ -843,6 +942,9 @@ export async function getFilteredCount(filters: ExportFilters): Promise<number> 
       AND (${bikou}::text[]          IS NULL OR "備考"     = ANY(${bikou}::text[]))
       AND (${seatMin}::integer IS NULL OR ("席数" ~ '^[0-9]+$' AND "席数"::integer >= ${seatMin}::integer))
       AND (${seatMax}::integer IS NULL OR ("席数" ~ '^[0-9]+$' AND "席数"::integer <= ${seatMax}::integer))
+      AND (${excl} = false OR NOT EXISTS (
+        SELECT 1 FROM everycall_invested ei WHERE ei.phone_number = csv_data."電話番号"
+      ))
   `
   return Number(rows[0]?.count ?? 0)
 }
@@ -856,6 +958,7 @@ export async function getFilteredCountByTimeCategory(
   const bikou          = toArrayOrNull(filters.bikou)
   const seatMin = (filters.seatMin !== undefined && !isNaN(filters.seatMin)) ? filters.seatMin : null
   const seatMax = (filters.seatMax !== undefined && !isNaN(filters.seatMax)) ? filters.seatMax : null
+  const excl = filters.excludeInvested === true
 
   const rows = await sql`
     SELECT "時間振り" as time_val, COUNT(*)::integer as count
@@ -866,6 +969,9 @@ export async function getFilteredCountByTimeCategory(
       AND (${bikou}::text[]          IS NULL OR "備考"     = ANY(${bikou}::text[]))
       AND (${seatMin}::integer IS NULL OR ("席数" ~ '^[0-9]+$' AND "席数"::integer >= ${seatMin}::integer))
       AND (${seatMax}::integer IS NULL OR ("席数" ~ '^[0-9]+$' AND "席数"::integer <= ${seatMax}::integer))
+      AND (${excl} = false OR NOT EXISTS (
+        SELECT 1 FROM everycall_invested ei WHERE ei.phone_number = csv_data."電話番号"
+      ))
     GROUP BY "時間振り"
   `
   const result: Record<string, number> = {}
@@ -882,6 +988,7 @@ export async function getFilteredRows(filters: ExportFilters): Promise<Record<st
   const bikou          = toArrayOrNull(filters.bikou)
   const seatMin = (filters.seatMin !== undefined && !isNaN(filters.seatMin)) ? filters.seatMin : null
   const seatMax = (filters.seatMax !== undefined && !isNaN(filters.seatMax)) ? filters.seatMax : null
+  const excl = filters.excludeInvested === true
 
   const rows = await sql`
     SELECT
@@ -903,6 +1010,9 @@ export async function getFilteredRows(filters: ExportFilters): Promise<Record<st
       AND (${bikou}::text[]          IS NULL OR "備考"     = ANY(${bikou}::text[]))
       AND (${seatMin}::integer IS NULL OR ("席数" ~ '^[0-9]+$' AND "席数"::integer >= ${seatMin}::integer))
       AND (${seatMax}::integer IS NULL OR ("席数" ~ '^[0-9]+$' AND "席数"::integer <= ${seatMax}::integer))
+      AND (${excl} = false OR NOT EXISTS (
+        SELECT 1 FROM everycall_invested ei WHERE ei.phone_number = csv_data."電話番号"
+      ))
     ORDER BY created_at
   `
   return rows.map((r) => {
