@@ -320,6 +320,11 @@ export async function createCSVUpload(
   `
 }
 
+export async function updateCSVUploadCounts(id: string, insertedCount: number, updatedCount: number) {
+  const sql = getSQL()
+  await sql`UPDATE csv_uploads SET inserted_count = ${insertedCount}, updated_count = ${updatedCount} WHERE id = ${id}`
+}
+
 export async function getCSVUploadsByUserId(userId: string) {
   const sql = getSQL()
   return sql`SELECT * FROM csv_uploads WHERE user_id = ${userId} ORDER BY uploaded_at DESC`

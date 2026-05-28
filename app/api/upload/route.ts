@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
-import { createCSVUpload, upsertCSVRow } from "@/lib/db";
+import { createCSVUpload, updateCSVUploadCounts, upsertCSVRow } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
 import { parseCSV, mapCsvColumnsToDb } from "@/lib/csv";
 
@@ -30,10 +30,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "CSVファイルの解析に失敗しました" }, { status: 400 });
     }
 
+    const uploadId = uuidv4();
+
+    // アップロード記録を先に作成（csv_data の外部キー制約のため）
+    await createCSVUpload(
+      uploadId,
+      decoded.userId,
+      uploadId,
+      file.name,
+      file.size,
+      parseResult.data.length,
+      0,
+      0,
+    );
+
     // 各行を処理して挿入・更新件数をカウント
     let insertedCount = 0;
     let updatedCount  = 0;
-    const uploadId = uuidv4();
 
     for (let i = 0; i < parseResult.data.length; i++) {
       const rawRow = parseResult.data[i];
@@ -45,17 +58,8 @@ export async function POST(request: NextRequest) {
       else updatedCount++;
     }
 
-    // アップロード記録を件数込みで保存
-    await createCSVUpload(
-      uploadId,
-      decoded.userId,
-      uploadId,
-      file.name,
-      file.size,
-      parseResult.data.length,
-      insertedCount,
-      updatedCount,
-    );
+    // 件数を確定値で更新
+    await updateCSVUploadCounts(uploadId, insertedCount, updatedCount);
 
     return NextResponse.json(
       {
