@@ -4,238 +4,322 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 
-interface Stats {
-  total: number;
-  seisa_count: number;
-  unseisa_count: number;
-  seisa_rate: number;
-  tel_count: number;
-}
-interface PieItem { name: string; value: number; color: string }
+// ── 型定義 ────────────────────────────────────────────────
 
-const PREVIEW_COLS = ["ID", "名前", "電話番号", "住所1", "ジャンル", "時間振り"];
+interface GroupStat {
+  tokunyu:  number;
+  mitorunyu: number;
+  rank_distribution: { rank: string; count: number }[];
+}
+
+interface Stats {
+  total:         number;
+  seisa_count:   number;
+  unseisa_count: number;
+  tokunyu_count: number;
+  missing: { jikanfuri: number; sekisuu: number; genre: number; bikou: number };
+  groups: Record<string, GroupStat>;
+  list_rank_distribution: { rank: string; count: number }[];
+}
+
+type TabKey = "飲食SH" | "サイネージ" | "デリバリー" | "ペイメント";
+const TABS: TabKey[] = ["飲食SH", "サイネージ", "デリバリー", "ペイメント"];
+
+// 結果ランク カラー（0〜10）
+const RESULT_RANK_COLORS: Record<string, string> = {
+  "0": "#d1d5db", "1": "#9ca3af", "2": "#60a5fa",
+  "3": "#a78bfa", "4": "#f87171", "5": "#34d399",
+  "6": "#fbbf24", "7": "#3b82f6", "8": "#fb923c",
+  "9": "#10b981", "10": "#ef4444",
+};
+
+const LIST_RANK_COLORS = [
+  "#3b82f6","#8b5cf6","#ec4899","#f59e0b","#10b981","#06b6d4","#6366f1",
+];
+
+// ── コンポーネント ────────────────────────────────────────
 
 function StatCard({
-  label, value, sub, color,
-}: { label: string; value: string | number; sub?: string; color: string }) {
+  label, value, sub, valueColor, bgClass,
+}: {
+  label: string; value: number; sub?: string;
+  valueColor: string; bgClass?: string;
+}) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <p className="text-xs text-gray-400 mb-2">{label}</p>
-      <p className={`text-2xl font-bold ${color}`}>{value}</p>
+    <div className={`rounded-xl border p-5 ${bgClass ?? "bg-white border-gray-200"}`}>
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <p className={`text-2xl font-bold ${valueColor}`}>{value.toLocaleString()}</p>
       {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
     </div>
   );
 }
 
+function MissingCard({ label, value, total }: { label: string; value: number; total: number }) {
+  const pct = total > 0 ? ((value / total) * 100).toFixed(1) : "0.0";
+  return (
+    <div className="bg-white rounded-xl border border-orange-100 p-4">
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <p className="text-xl font-bold text-orange-500">{value.toLocaleString()}</p>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+          <div
+            className="bg-orange-400 h-1.5 rounded-full"
+            style={{ width: `${Math.min(parseFloat(pct), 100)}%` }}
+          />
+        </div>
+        <span className="text-xs text-gray-400 shrink-0">{pct}%</span>
+      </div>
+    </div>
+  );
+}
+
+function ResultRankTooltip({
+  active, payload, rankLabels,
+}: {
+  active?: boolean;
+  payload?: { payload: { rank: string; count: number } }[];
+  rankLabels: Record<string, string>;
+}) {
+  if (!active || !payload?.length) return null;
+  const { rank, count } = payload[0].payload;
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-md text-xs max-w-[200px]">
+      <p className="font-semibold text-gray-700 mb-0.5">ランク {rank}</p>
+      <p className="text-gray-500 mb-1 leading-snug">{rankLabels[rank] ?? rank}</p>
+      <p className="font-semibold text-gray-800">{count.toLocaleString()} 件</p>
+    </div>
+  );
+}
+
+function ListRankTooltip({
+  active, payload, rankLabels,
+}: {
+  active?: boolean;
+  payload?: { payload: { rank: string; count: number } }[];
+  rankLabels: Record<string, string>;
+}) {
+  if (!active || !payload?.length) return null;
+  const { rank, count } = payload[0].payload;
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-md text-xs max-w-[220px]">
+      <p className="font-semibold text-gray-700 mb-0.5">リストランク {rank}</p>
+      <p className="text-gray-500 mb-1 leading-snug">{rankLabels[rank] ?? rank}</p>
+      <p className="font-semibold text-gray-800">{count.toLocaleString()} 件</p>
+    </div>
+  );
+}
+
+// ── メインページ ──────────────────────────────────────────
+
 export default function DashboardPage() {
   const router = useRouter();
-  const [stats, setStats]     = useState<Stats | null>(null);
-  const [pieData, setPieData] = useState<PieItem[]>([]);
-  const [preview, setPreview] = useState<Record<string, string>[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState("");
+  const [stats, setStats]               = useState<Stats | null>(null);
+  const [resultRankLabels, setRRL]      = useState<Record<string, string>>({});
+  const [listRankLabels, setLRL]        = useState<Record<string, string>>({});
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState("");
+  const [activeTab, setActiveTab]       = useState<TabKey>("飲食SH");
 
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
     if (!token) { router.push("/login"); return; }
-
     fetch("/api/dashboard", { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => {
-        if (r.status === 401) { router.push("/login"); return null; }
-        return r.json();
-      })
-      .then((data) => {
+      .then(r => { if (r.status === 401) { router.push("/login"); return null; } return r.json(); })
+      .then(data => {
         if (!data) return;
-        if (!data.success) { setError(data.message || "エラーが発生しました"); return; }
+        if (!data.success) { setError(data.message ?? "エラーが発生しました"); return; }
         setStats(data.stats);
-        setPieData(data.pie_data);
-        setPreview(data.preview);
+        setRRL(data.result_rank_labels ?? {});
+        setLRL(data.list_rank_labels   ?? {});
       })
       .catch(() => setError("データ取得に失敗しました"))
       .finally(() => setLoading(false));
   }, [router]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-64">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+    </div>
+  );
 
-  const noData = !stats || stats.total === 0;
+  if (error) return (
+    <div className="p-8">
+      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
+    </div>
+  );
+
+  if (!stats) return null;
+
+  const seisaRate = stats.total > 0 ? ((stats.seisa_count / stats.total) * 100).toFixed(1) : "0.0";
+  const group     = stats.groups[activeTab] ?? { tokunyu: 0, mitorunyu: 0, rank_distribution: [] };
+
+  const listRankData = stats.list_rank_distribution.map((d, i) => ({
+    ...d,
+    label: `R${d.rank}`,
+    color: LIST_RANK_COLORS[i % LIST_RANK_COLORS.length],
+  }));
 
   return (
-    <div className="p-8">
+    <div className="p-8 max-w-5xl">
+
+      {/* ─── ヘッダー ─── */}
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
-          <p className="text-sm text-gray-500 mt-1">全データの統合統計</p>
+          <p className="text-sm text-gray-500 mt-1">リストDB 全体統計</p>
         </div>
         <Link
           href="/dashboard/upload"
           className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
           </svg>
           アップロード
         </Link>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 text-sm">
-          {error}
+      {/* ─── 行①：メインサマリー ─── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard
+          label="総リスト数" value={stats.total} sub="DB全件数"
+          valueColor="text-gray-800"
+        />
+        <StatCard
+          label="精査済数" value={stats.seisa_count} sub={`精査率 ${seisaRate}%`}
+          valueColor="text-blue-600"
+        />
+        <StatCard
+          label="未精査数" value={stats.unseisa_count} sub="要精査"
+          valueColor="text-orange-500"
+        />
+        <StatCard
+          label="投入可能数" value={stats.tokunyu_count} sub="精査済み＆未投入"
+          valueColor="text-green-700" bgClass="bg-green-50 border-green-200"
+        />
+      </div>
+
+      {/* ─── 行②：未精査内訳 ─── */}
+      <div className="mb-8">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-0.5">
+          未精査内訳（欠損カラム別）
+        </p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <MissingCard label="時間振り未登録" value={stats.missing.jikanfuri} total={stats.total} />
+          <MissingCard label="席数未登録"     value={stats.missing.sekisuu}   total={stats.total} />
+          <MissingCard label="ジャンル未登録" value={stats.missing.genre}     total={stats.total} />
+          <MissingCard label="備考未登録"     value={stats.missing.bikou}     total={stats.total} />
         </div>
-      )}
+      </div>
 
-      {noData ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}
-            className="w-12 h-12 text-gray-300 mx-auto mb-4">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-          </svg>
-          <p className="text-gray-400 text-sm mb-4">データがまだありません。CSVをアップロードしてください</p>
-          <Link href="/dashboard/upload"
-            className="inline-block px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700">
-            ファイルをアップロード
-          </Link>
+      {/* ─── リストグループ別集計（タブ） ─── */}
+      <div className="bg-white rounded-xl border border-gray-200 mb-6">
+        {/* タブバー */}
+        <div className="flex border-b border-gray-200">
+          {TABS.map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-6 py-3 text-sm font-medium transition-colors ${
+                activeTab === tab
+                  ? "border-b-2 border-gray-900 text-gray-900"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
         </div>
-      ) : (
-        <>
-          {/* ─── サマリーカード ─── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-            <StatCard
-              label="総データ数"
-              value={stats!.total.toLocaleString()}
-              sub="全アップロード合計"
-              color="text-gray-800"
-            />
-            <StatCard
-              label="時間振り済み"
-              value={stats!.seisa_count.toLocaleString()}
-              sub="時間振りカラム有り"
-              color="text-blue-600"
-            />
-            <StatCard
-              label="精査率"
-              value={`${stats!.seisa_rate}%`}
-              sub="時間振り済み / 総数"
-              color="text-green-600"
-            />
-            <StatCard
-              label="電話番号有り"
-              value={stats!.tel_count.toLocaleString()}
-              sub="電話番号カラム有り"
-              color="text-purple-600"
-            />
-          </div>
 
-          {/* ─── 精査状況 円グラフ ─── */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
-            <h2 className="text-base font-semibold text-gray-900 mb-5">精査状況（時間振り）</h2>
-            {pieData.length > 0 ? (
-              <div className="flex flex-col md:flex-row items-center gap-8">
-                <ResponsiveContainer width="100%" height={240} className="max-w-xs">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%" cy="50%"
-                      innerRadius={55} outerRadius={95}
-                      paddingAngle={2}
-                      dataKey="value"
-                    >
-                      {pieData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(val) => [`${Number(val).toLocaleString()} 件`, ""]} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-
-                <div className="flex-1 space-y-3 min-w-0">
-                  {pieData.map((item) => (
-                    <div key={item.name} className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                        <span className="text-sm text-gray-700">{item.name}</span>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <span className="text-sm font-semibold text-gray-900">
-                          {item.value.toLocaleString()} 件
-                        </span>
-                        {stats && stats.total > 0 && (
-                          <span className="text-xs text-gray-400 ml-2">
-                            ({((item.value / stats.total) * 100).toFixed(1)}%)
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <p className="text-gray-400 text-sm text-center py-8">データがありません</p>
-            )}
-          </div>
-
-          {/* ─── データプレビュー ─── */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900">
-                データプレビュー
-                <span className="text-sm font-normal text-gray-400 ml-2">（先頭20件）</span>
-              </h2>
-              <span className="text-xs text-gray-400">全 {stats!.total.toLocaleString()} 件より</span>
+        <div className="p-6">
+          {/* 投入済 / 未投入 */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="bg-blue-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">投入済数</p>
+              <p className="text-2xl font-bold text-blue-600">{group.tokunyu.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-1">最大進捗 ≥ 1</p>
             </div>
-
-            {preview.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-8">データがありません</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 w-8">#</th>
-                      {PREVIEW_COLS.map((col) => (
-                        <th key={col} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {preview.map((row, i) => (
-                      <tr key={i} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-gray-300 text-xs">{i + 1}</td>
-                        {PREVIEW_COLS.map((col) => {
-                          const val = row[col];
-                          const isTime = col === "時間振り";
-                          return (
-                            <td key={col} className="px-4 py-3 text-gray-700 max-w-xs truncate">
-                              {isTime && val ? (
-                                <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
-                                  {val}
-                                </span>
-                              ) : (
-                                val || <span className="text-gray-300">—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-1">未投入数</p>
+              <p className="text-2xl font-bold text-gray-700">{group.mitorunyu.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-1">最大進捗 = 0</p>
+            </div>
           </div>
-        </>
-      )}
+
+          {/* 結果ランク棒グラフ */}
+          <p className="text-sm font-semibold text-gray-700 mb-3">結果ランク別件数</p>
+          {group.rank_distribution.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={group.rank_distribution} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                  <XAxis dataKey="rank" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => Number(v).toLocaleString()} width={52} />
+                  <Tooltip content={<ResultRankTooltip rankLabels={resultRankLabels} />} />
+                  <Bar dataKey="count" radius={[3, 3, 0, 0]}>
+                    {group.rank_distribution.map((entry, i) => (
+                      <Cell key={i} fill={RESULT_RANK_COLORS[entry.rank] ?? "#6b7280"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+              {/* 凡例 */}
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+                {group.rank_distribution.map(({ rank }) => (
+                  <span key={rank} className="flex items-center gap-1 text-xs text-gray-500">
+                    <span
+                      className="w-2.5 h-2.5 rounded-sm inline-block shrink-0"
+                      style={{ backgroundColor: RESULT_RANK_COLORS[rank] ?? "#6b7280" }}
+                    />
+                    {rank}: {resultRankLabels[rank] ?? rank}
+                  </span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-gray-400 text-sm text-center py-8">データなし</p>
+          )}
+        </div>
+      </div>
+
+      {/* ─── リストランク別集計 ─── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 className="text-base font-semibold text-gray-900 mb-4">リストランク別集計</h2>
+        {listRankData.length > 0 ? (
+          <>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={listRankData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => Number(v).toLocaleString()} width={52} />
+                <Tooltip content={<ListRankTooltip rankLabels={listRankLabels} />} />
+                <Bar dataKey="count" radius={[3, 3, 0, 0]}>
+                  {listRankData.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            {/* 凡例 */}
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+              {listRankData.map(({ rank, color }) => (
+                <span key={rank} className="flex items-center gap-1 text-xs text-gray-500">
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm inline-block shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                  R{rank}: {listRankLabels[rank] ?? rank}
+                </span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="text-gray-400 text-sm text-center py-8">データなし</p>
+        )}
+      </div>
+
     </div>
   );
 }

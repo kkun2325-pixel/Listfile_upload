@@ -468,7 +468,139 @@ export async function getCSVDataByUploadId(uploadId: string) {
   return sql`SELECT * FROM csv_data WHERE upload_id = ${uploadId} ORDER BY row_number`
 }
 
-// ── ダッシュボード統計 ─────────────────────────────────────
+// ── 結果ランク・リストランク定義 ────────────────────────────
+
+export const RESULT_RANK_LABELS: Record<string, string> = {
+  '0':  '未架電',
+  '1':  '留守・不在',
+  '2':  '見込み（再架電予定）',
+  '3':  '非決裁者',
+  '4':  '入口で断られた（決裁確認・用件伝える前に切られた）',
+  '5':  '決裁者',
+  '6':  '用件伝えた',
+  '7':  '日程提案',
+  '8':  '日程切れ・情報確認や売上意思確認中に切られた',
+  '9':  'アポ受注',
+  '10': '対象外（閉店・個人規模でない本社管理など）',
+}
+
+export const LIST_RANK_LABELS: Record<string, string> = {
+  '1': '店名+電話番号+住所あり',
+  '2': '1+席数+時間振りあり',
+  '3': '2+現アナ以外（架電可能）',
+  '4': '3+対応履歴あり',
+  '5': '4+決裁履歴あり',
+  '6': '5+有効履歴あり',
+  '7': '6+アポ受注済',
+}
+
+// ── ダッシュボード v2 統計 ─────────────────────────────────
+
+export interface GroupStat {
+  tokunyu:  number
+  mitorunyu: number
+  rank_distribution: { rank: string; count: number }[]
+}
+
+export interface DashboardStatsV2 {
+  total:         number
+  seisa_count:   number
+  unseisa_count: number
+  tokunyu_count: number
+  missing: { jikanfuri: number; sekisuu: number; genre: number; bikou: number }
+  groups: Record<string, GroupStat>
+  list_rank_distribution: { rank: string; count: number }[]
+}
+
+function processGroupRows(rows: Record<string, unknown>[]): GroupStat {
+  const counts: Record<string, number> = {}
+  for (const row of rows) {
+    const val = row.rank_val
+    const cnt = Number(row.cnt)
+    const key = (val === null || val === undefined || String(val).trim() === '') ? '0' : String(val).trim()
+    counts[key] = (counts[key] ?? 0) + cnt
+  }
+  let tokunyu = 0, mitorunyu = 0
+  for (const [rank, cnt] of Object.entries(counts)) {
+    const n = parseInt(rank, 10)
+    if (isNaN(n) || n <= 0) mitorunyu += cnt
+    else tokunyu += cnt
+  }
+  const rank_distribution = Object.entries(counts)
+    .map(([rank, count]) => ({ rank, count }))
+    .sort((a, b) => {
+      const na = parseInt(a.rank, 10), nb = parseInt(b.rank, 10)
+      return (isNaN(na) ? 0 : na) - (isNaN(nb) ? 0 : nb)
+    })
+  return { tokunyu, mitorunyu, rank_distribution }
+}
+
+export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
+  const sql = getSQL()
+
+  const [summaryRes, g1, g2, g3, g4, listRankRes] = await Promise.all([
+    sql`
+      SELECT
+        COUNT(*)::integer AS total,
+        SUM(CASE WHEN "時間振り"  IS NOT NULL AND "時間振り"  != ''
+                      AND "席数"     IS NOT NULL AND "席数"     != ''
+                      AND "ジャンル" IS NOT NULL AND "ジャンル" != ''
+                      AND "備考"     IS NOT NULL AND "備考"     != ''
+                 THEN 1 ELSE 0 END)::integer AS seisa_count,
+        SUM(CASE WHEN ("時間振り"  IS NULL OR "時間振り"  = '')
+                   OR ("席数"     IS NULL OR "席数"     = '')
+                   OR ("ジャンル" IS NULL OR "ジャンル" = '')
+                   OR ("備考"     IS NULL OR "備考"     = '')
+                 THEN 1 ELSE 0 END)::integer AS unseisa_count,
+        SUM(CASE WHEN ("最大進捗"  IS NULL OR "最大進捗"  = '' OR "最大進捗" = '0')
+                      AND "時間振り"  IS NOT NULL AND "時間振り"  != ''
+                      AND "席数"     IS NOT NULL AND "席数"     != ''
+                      AND "ジャンル" IS NOT NULL AND "ジャンル" != ''
+                      AND "備考"     IS NOT NULL AND "備考"     != ''
+                 THEN 1 ELSE 0 END)::integer AS tokunyu_count,
+        SUM(CASE WHEN "時間振り"  IS NULL OR "時間振り"  = '' THEN 1 ELSE 0 END)::integer AS missing_jikanfuri,
+        SUM(CASE WHEN "席数"     IS NULL OR "席数"     = '' THEN 1 ELSE 0 END)::integer AS missing_sekisuu,
+        SUM(CASE WHEN "ジャンル" IS NULL OR "ジャンル" = '' THEN 1 ELSE 0 END)::integer AS missing_genre,
+        SUM(CASE WHEN "備考"     IS NULL OR "備考"     = '' THEN 1 ELSE 0 END)::integer AS missing_bikou
+      FROM csv_data
+    `,
+    sql`SELECT "飲食SH最大進捗"      AS rank_val, COUNT(*)::integer AS cnt FROM csv_data GROUP BY "飲食SH最大進捗"`,
+    sql`SELECT "サイネ"               AS rank_val, COUNT(*)::integer AS cnt FROM csv_data GROUP BY "サイネ"`,
+    sql`SELECT "デリバリー最大進捗"   AS rank_val, COUNT(*)::integer AS cnt FROM csv_data GROUP BY "デリバリー最大進捗"`,
+    sql`SELECT "ペイメント_コール履歴" AS rank_val, COUNT(*)::integer AS cnt FROM csv_data GROUP BY "ペイメント_コール履歴"`,
+    sql`
+      SELECT "リストランク" AS rank_val, COUNT(*)::integer AS cnt
+      FROM csv_data
+      WHERE "リストランク" IS NOT NULL AND "リストランク" != ''
+      GROUP BY "リストランク"
+    `,
+  ])
+
+  const s = summaryRes[0] ?? {}
+  return {
+    total:         Number(s.total         ?? 0),
+    seisa_count:   Number(s.seisa_count   ?? 0),
+    unseisa_count: Number(s.unseisa_count ?? 0),
+    tokunyu_count: Number(s.tokunyu_count ?? 0),
+    missing: {
+      jikanfuri: Number(s.missing_jikanfuri ?? 0),
+      sekisuu:   Number(s.missing_sekisuu   ?? 0),
+      genre:     Number(s.missing_genre     ?? 0),
+      bikou:     Number(s.missing_bikou     ?? 0),
+    },
+    groups: {
+      '飲食SH':    processGroupRows(g1 as Record<string, unknown>[]),
+      'サイネージ': processGroupRows(g2 as Record<string, unknown>[]),
+      'デリバリー': processGroupRows(g3 as Record<string, unknown>[]),
+      'ペイメント': processGroupRows(g4 as Record<string, unknown>[]),
+    },
+    list_rank_distribution: (listRankRes as Record<string, unknown>[])
+      .map(r => ({ rank: String(r.rank_val), count: Number(r.cnt) }))
+      .sort((a, b) => parseInt(a.rank, 10) - parseInt(b.rank, 10)),
+  }
+}
+
+// ── ダッシュボード統計（旧版・後方互換） ─────────────────────
 
 export async function getDashboardStatsAll() {
   const sql = getSQL()
