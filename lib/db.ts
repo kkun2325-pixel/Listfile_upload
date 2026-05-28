@@ -336,29 +336,45 @@ export async function getCSVUploadById(uploadId: string) {
   return result[0] ?? null
 }
 
-// ── CSVデータ アップサート（電話番号突合）─────────────────
-// 精査ファイルのIDは無視し、電話番号をキーとして突合する
+// ── CSVデータ バッチアップサート（電話番号突合）────────────
+// 1万行を数クエリで処理するバッチ版
 // 一致 → 精査済み14カラムを上書き更新
 // 不一致 → 全カラム新規挿入（IDはNULL）
 
-export async function upsertCSVRow(
-  internalId: string,
+export async function batchUpsertCSVRows(
   uploadId: string,
-  rowNumber: number,
-  row: Record<string, string>,
-): Promise<{ action: 'inserted' | 'updated' }> {
+  rows: Array<{ internalId: string; rowNumber: number; row: Record<string, string> }>,
+): Promise<{ insertedCount: number; updatedCount: number }> {
+  if (rows.length === 0) return { insertedCount: 0, updatedCount: 0 }
   const sql = getSQL()
   const now = new Date().toISOString()
-  const tel = row["電話番号"] ? row["電話番号"].trim() || null : null
 
-  // ── 電話番号で既存レコードを検索 ──
-  if (tel) {
-    const existing = await sql`
-      SELECT id FROM csv_data WHERE "電話番号" = ${tel} LIMIT 1
-    `
-    if (existing.length > 0) {
-      // 精査済み14カラムを上書き更新（IDは保持）
-      await sql`
+  // ① 全電話番号を一括検索
+  const tels = rows
+    .map(r => r.row["電話番号"]?.trim() || null)
+    .filter((t): t is string => !!t)
+  const existingSet = new Set<string>()
+  if (tels.length > 0) {
+    const existing = await sql`SELECT "電話番号" FROM csv_data WHERE "電話番号" = ANY(${tels})`
+    for (const e of existing) existingSet.add(String(e["電話番号"]))
+  }
+
+  const toUpdate: typeof rows = []
+  const toInsert: typeof rows = []
+  for (const r of rows) {
+    const tel = r.row["電話番号"]?.trim() || null
+    if (tel && existingSet.has(tel)) toUpdate.push(r)
+    else toInsert.push(r)
+  }
+
+  // ② 更新（電話番号一致 → 精査14カラムを上書き）
+  // Neonはtagged templateのみ対応のため50件ずつ個別UPDATE
+  const UPDATE_CHUNK = 50
+  for (let i = 0; i < toUpdate.length; i += UPDATE_CHUNK) {
+    const chunk = toUpdate.slice(i, i + UPDATE_CHUNK)
+    await Promise.all(chunk.map(({ row }) => {
+      const tel = row["電話番号"]!.trim()
+      return sql`
         UPDATE csv_data SET
           "時間振り"       = ${row["時間振り"]       ?? null},
           "定休日"         = ${row["定休日"]         ?? null},
@@ -374,56 +390,69 @@ export async function upsertCSVRow(
           "担当者"         = ${row["担当者"]         ?? null},
           "店舗精査"       = ${row["店舗精査"]       ?? null},
           "本社精査"       = ${row["本社精査"]       ?? null},
-          is_duplicate     = 1,
-          updated_at       = ${now},
-          upload_id        = ${uploadId}
+          is_duplicate = 1, updated_at = ${now}, upload_id = ${uploadId}
         WHERE "電話番号" = ${tel}
       `
-      return { action: 'updated' }
-    }
+    }))
   }
 
-  // ── 電話番号不一致 → 新規挿入（精査ファイルのIDは無視し NULL）──
-  await sql`
-    INSERT INTO csv_data (
-      id, upload_id, row_number, is_duplicate, created_at, updated_at,
-      "ID", "名前", "電話番号", "予約電話番号", "住所1", "住所2",
-      "Uber等エリア内外", "データ取得元", "業種大分類", "電話番号確認",
-      "営業時間", "時間振り", "定休日", "席数", "ジャンル", "外人店舗",
-      "単価", "HP有無", "オープン日", "備考",
-      "架電対象フラグ", "NG", "EC", "EC投入済",
-      "対象外理由①", "対象外理由②", "担当者", "店舗精査", "本社精査",
-      "精査担当者", "店舗数", "現アナ",
-      "クレーム履歴", "最終更新日", "最終架電日", "通電有無", "架電対応",
-      "決裁者対応", "有効会話", "AP履歴", "対応者属性", "オーナー名",
-      "携帯番号", "リストランク", "デリバリー最大進捗", "飲食SH最大進捗",
-      "ペイメント_コール履歴", "サイネ", "最大進捗"
-    ) VALUES (
-      ${internalId}, ${uploadId}, ${rowNumber}, 0, ${now}, ${now},
-      NULL,
-      ${row["名前"]           ?? null}, ${row["電話番号"]       ?? null}, ${row["予約電話番号"]   ?? null},
-      ${row["住所1"]          ?? null}, ${row["住所2"]          ?? null},
-      ${row["Uber等エリア内外"] ?? null}, ${row["データ取得元"] ?? null}, ${row["業種大分類"]     ?? null},
-      ${row["電話番号確認"]   ?? null},
-      ${row["営業時間"]       ?? null}, ${row["時間振り"]       ?? null}, ${row["定休日"]         ?? null},
-      ${row["席数"]           ?? null}, ${row["ジャンル"]       ?? null}, ${row["外人店舗"]       ?? null},
-      ${row["単価"]           ?? null}, ${row["HP有無"]         ?? null}, ${row["オープン日"]     ?? null},
-      ${row["備考"]           ?? null},
-      ${row["架電対象フラグ"] ?? null}, ${row["NG"]             ?? null}, ${row["EC"]             ?? null},
-      ${row["EC投入済"]       ?? null},
-      ${row["対象外理由①"]   ?? null}, ${row["対象外理由②"]   ?? null}, ${row["担当者"]         ?? null},
-      ${row["店舗精査"]       ?? null}, ${row["本社精査"]       ?? null},
-      ${row["精査担当者"]     ?? null}, ${row["店舗数"]         ?? null}, ${row["現アナ"]         ?? null},
-      ${row["クレーム履歴"]   ?? null}, ${row["最終更新日"]     ?? null}, ${row["最終架電日"]     ?? null},
-      ${row["通電有無"]       ?? null}, ${row["架電対応"]       ?? null},
-      ${row["決裁者対応"]     ?? null}, ${row["有効会話"]       ?? null}, ${row["AP履歴"]         ?? null},
-      ${row["対応者属性"]     ?? null}, ${row["オーナー名"]     ?? null},
-      ${row["携帯番号"]       ?? null}, ${row["リストランク"]   ?? null},
-      ${row["デリバリー最大進捗"] ?? null}, ${row["飲食SH最大進捗"] ?? null},
-      ${row["ペイメント_コール履歴"] ?? null}, ${row["サイネ"] ?? null}, ${row["最大進捗"]       ?? null}
-    )
-  `
-  return { action: 'inserted' }
+  // ③ 挿入（500件ずつ個別INSERT）
+  const INSERT_CHUNK = 500
+  for (let i = 0; i < toInsert.length; i += INSERT_CHUNK) {
+    const chunk = toInsert.slice(i, i + INSERT_CHUNK)
+    await Promise.all(chunk.map(({ internalId, rowNumber, row }) => sql`
+      INSERT INTO csv_data (
+        id, upload_id, row_number, is_duplicate, created_at, updated_at,
+        "ID", "名前", "電話番号", "予約電話番号", "住所1", "住所2",
+        "Uber等エリア内外", "データ取得元", "業種大分類", "電話番号確認",
+        "営業時間", "時間振り", "定休日", "席数", "ジャンル", "外人店舗",
+        "単価", "HP有無", "オープン日", "備考",
+        "架電対象フラグ", "NG", "EC", "EC投入済",
+        "対象外理由①", "対象外理由②", "担当者", "店舗精査", "本社精査",
+        "精査担当者", "店舗数", "現アナ",
+        "クレーム履歴", "最終更新日", "最終架電日", "通電有無", "架電対応",
+        "決裁者対応", "有効会話", "AP履歴", "対応者属性", "オーナー名",
+        "携帯番号", "リストランク", "デリバリー最大進捗", "飲食SH最大進捗",
+        "ペイメント_コール履歴", "サイネ", "最大進捗"
+      ) VALUES (
+        ${internalId}, ${uploadId}, ${rowNumber}, 0, ${now}, ${now},
+        NULL,
+        ${row["名前"]              ?? null}, ${row["電話番号"]       ?? null}, ${row["予約電話番号"]      ?? null},
+        ${row["住所1"]             ?? null}, ${row["住所2"]          ?? null},
+        ${row["Uber等エリア内外"]  ?? null}, ${row["データ取得元"]   ?? null}, ${row["業種大分類"]        ?? null},
+        ${row["電話番号確認"]      ?? null},
+        ${row["営業時間"]          ?? null}, ${row["時間振り"]       ?? null}, ${row["定休日"]            ?? null},
+        ${row["席数"]              ?? null}, ${row["ジャンル"]       ?? null}, ${row["外人店舗"]          ?? null},
+        ${row["単価"]              ?? null}, ${row["HP有無"]         ?? null}, ${row["オープン日"]        ?? null},
+        ${row["備考"]              ?? null},
+        ${row["架電対象フラグ"]    ?? null}, ${row["NG"]             ?? null}, ${row["EC"]                ?? null},
+        ${row["EC投入済"]          ?? null},
+        ${row["対象外理由①"]      ?? null}, ${row["対象外理由②"]   ?? null}, ${row["担当者"]            ?? null},
+        ${row["店舗精査"]          ?? null}, ${row["本社精査"]       ?? null},
+        ${row["精査担当者"]        ?? null}, ${row["店舗数"]         ?? null}, ${row["現アナ"]            ?? null},
+        ${row["クレーム履歴"]      ?? null}, ${row["最終更新日"]     ?? null}, ${row["最終架電日"]        ?? null},
+        ${row["通電有無"]          ?? null}, ${row["架電対応"]       ?? null},
+        ${row["決裁者対応"]        ?? null}, ${row["有効会話"]       ?? null}, ${row["AP履歴"]            ?? null},
+        ${row["対応者属性"]        ?? null}, ${row["オーナー名"]     ?? null},
+        ${row["携帯番号"]          ?? null}, ${row["リストランク"]   ?? null},
+        ${row["デリバリー最大進捗"] ?? null}, ${row["飲食SH最大進捗"] ?? null},
+        ${row["ペイメント_コール履歴"] ?? null}, ${row["サイネ"]     ?? null}, ${row["最大進捗"]          ?? null}
+      )
+    `))
+  }
+
+  return { insertedCount: toInsert.length, updatedCount: toUpdate.length }
+}
+
+// 後方互換用（1行版）
+export async function upsertCSVRow(
+  internalId: string,
+  uploadId: string,
+  rowNumber: number,
+  row: Record<string, string>,
+): Promise<{ action: 'inserted' | 'updated' }> {
+  const result = await batchUpsertCSVRows(uploadId, [{ internalId, rowNumber, row }])
+  return { action: result.insertedCount > 0 ? 'inserted' : 'updated' }
 }
 
 // 電話番号の既存チェック（後方互換用）

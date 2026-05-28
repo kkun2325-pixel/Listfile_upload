@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
-import { createCSVUpload, updateCSVUploadCounts, upsertCSVRow } from "@/lib/db";
+import { createCSVUpload, updateCSVUploadCounts, batchUpsertCSVRows } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
 import { parseCSV, mapCsvColumnsToDb } from "@/lib/csv";
 
@@ -44,19 +44,14 @@ export async function POST(request: NextRequest) {
       0,
     );
 
-    // 各行を処理して挿入・更新件数をカウント
-    let insertedCount = 0;
-    let updatedCount  = 0;
+    // 全行をバッチ処理（電話番号一括検索 → 並列INSERT/UPDATE）
+    const rowsPayload = parseResult.data.map((rawRow, i) => ({
+      internalId: uuidv4(),
+      rowNumber:  i + 1,
+      row:        mapCsvColumnsToDb(rawRow),
+    }));
 
-    for (let i = 0; i < parseResult.data.length; i++) {
-      const rawRow = parseResult.data[i];
-      const row    = mapCsvColumnsToDb(rawRow);
-      const rowId  = uuidv4();
-
-      const result = await upsertCSVRow(rowId, uploadId, i + 1, row);
-      if (result.action === "inserted") insertedCount++;
-      else updatedCount++;
-    }
+    const { insertedCount, updatedCount } = await batchUpsertCSVRows(uploadId, rowsPayload);
 
     // 件数を確定値で更新
     await updateCSVUploadCounts(uploadId, insertedCount, updatedCount);
@@ -65,10 +60,10 @@ export async function POST(request: NextRequest) {
       {
         success: true,
         message: "ファイルをアップロードしました",
-        upload_id:       uploadId,
-        row_count:       parseResult.data.length,
-        inserted_count:  insertedCount,
-        updated_count:   updatedCount,
+        upload_id:      uploadId,
+        row_count:      parseResult.data.length,
+        inserted_count: insertedCount,
+        updated_count:  updatedCount,
       },
       { status: 201 }
     );
