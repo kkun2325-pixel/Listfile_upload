@@ -8,28 +8,9 @@ import {
 } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
 import { generateEvercallCSV } from "@/lib/csv";
+import { TIME_CATEGORIES } from "@/lib/constants";
 
 const BOM = "﻿";
-
-// DB実在値（count降順）
-const ALL_TIME_CATEGORIES = [
-  "閉店",
-  "通し午前開始",
-  "業種対象外",
-  "通し午後開始",
-  "情報不足",
-  "14時ランチ終了",
-  "15時ランチ終了",
-  "17時ディナー開始",
-  "掲載保留",
-  "本社×",
-  "通し18時終了",
-  "18時ディナー開始",
-  "19時ディナー開始",
-  "外人×",
-  "16時ディナー開始",
-  "業務対象外",
-];
 
 function buildSeatConditionText(seatMin?: number, seatMax?: number): string {
   if (seatMin !== undefined && seatMax !== undefined) {
@@ -70,8 +51,8 @@ export async function POST(request: NextRequest) {
     // 処理する時間振りカテゴリを決定
     // timeCategories フィルターが設定されている場合はそれに従い、なければ全DB値を対象
     const selectedOrAll = (filters.timeCategories && filters.timeCategories.length > 0)
-      ? ALL_TIME_CATEGORIES.filter((c) => filters.timeCategories!.includes(c))
-      : ALL_TIME_CATEGORIES;
+      ? TIME_CATEGORIES.filter((c) => filters.timeCategories!.includes(c))
+      : TIME_CATEGORIES;
     // データに実際に存在する値も漏れなく含める（定義リスト外の新規値への対応）
     const uniqueInData = [...new Set(allRows.map((r) => r["時間振り"]).filter(Boolean))];
     const extraCats = uniqueInData.filter((c) => !selectedOrAll.includes(c));

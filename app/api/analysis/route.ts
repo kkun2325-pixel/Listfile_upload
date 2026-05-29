@@ -1,20 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, extractToken } from "@/lib/auth";
 import { neon } from "@neondatabase/serverless";
+import { TIME_CATEGORIES } from "@/lib/constants";
 
 type SqlFn = { query: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]> }
-
-const DEFINED_CATEGORIES = [
-  "14時ランチ終了",
-  "15時ランチ終了",
-  "16時ディナー開始",
-  "17時ディナー開始",
-  "18時ディナー開始",
-  "19時ディナー開始",
-  "通し午前開始",
-  "通し午後開始",
-  "通し18時終了",
-]
 
 export async function GET(request: NextRequest) {
   const token = extractToken(request.headers.get("authorization"));
@@ -65,7 +54,7 @@ export async function GET(request: NextRequest) {
     }
 
     const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-    const catLiteral  = DEFINED_CATEGORIES.map(c => `'${c.replace(/'/g, "''")}'`).join(",");
+    const catLiteral = TIME_CATEGORIES.map(c => `'${c.replace(/'/g, "''")}'`).join(",");
 
     // 時間振り別集計（定義外 → その他・未登録）
     const countRows = await sql.query(`
@@ -84,7 +73,7 @@ export async function GET(request: NextRequest) {
     for (const r of countRows) countMap[String(r.time_category)] = Number(r.count);
 
     const rows = [
-      ...DEFINED_CATEGORIES.map(cat => ({ time_category: cat, count: countMap[cat] ?? 0 })),
+      ...TIME_CATEGORIES.map(cat => ({ time_category: cat, count: countMap[cat] ?? 0 })),
       { time_category: "その他・未登録", count: countMap["その他・未登録"] ?? 0 },
     ];
 

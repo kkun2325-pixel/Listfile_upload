@@ -2,18 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-
-const GENRE_OPTIONS = [
-  "居酒屋・バー", "肉料理", "和食", "うどん/そば", "粉もの・鉄板",
-  "アジア料理", "洋食", "カフェ・軽飲食", "レストラン・多国籍",
-  "その他飲食店", "ラーメン",
-];
-
-const BIKOU_OPTIONS = [
-  "なし", "単価8000円以上", "全個室", "完全予約制/コースのみ",
-  "テイクアウト専門店", "ディナー営業なし", "商業施設内店舗",
-  "リニューアル/移転", "時間30未満", "スナック/クラブ",
-];
+import { GENRE_OPTIONS, BIKOU_OPTIONS, PREFECTURES_ORDER } from "@/lib/constants";
 
 interface TimeRow { time_category: string; count: number }
 
@@ -129,7 +118,15 @@ export default function AnalysisPage() {
         });
         const d = await r.json();
         if (!d.success) { setError(d.message); return; }
-        setPrefOptions(d.prefectures);
+        const sorted = [...d.prefectures].sort((a: string, b: string) => {
+          const ai = PREFECTURES_ORDER.indexOf(a);
+          const bi = PREFECTURES_ORDER.indexOf(b);
+          if (ai === -1 && bi === -1) return a.localeCompare(b);
+          if (ai === -1) return 1;
+          if (bi === -1) return -1;
+          return ai - bi;
+        });
+        setPrefOptions(sorted);
         setRows(d.rows);
         setTotal(d.total);
       } catch {
