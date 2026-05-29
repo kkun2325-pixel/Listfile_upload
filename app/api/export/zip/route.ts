@@ -4,11 +4,10 @@ import { v4 as uuidv4 } from "uuid";
 import {
   getFilteredRows,
   saveExportHistory,
-  LIST_COLUMNS,
   type ExportFilters,
 } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
-import { generateCSV } from "@/lib/csv";
+import { generateEvercallCSV } from "@/lib/csv";
 
 const BOM = "﻿";
 
@@ -65,8 +64,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "該当データが0件です" }, { status: 400 });
     }
 
-    const headers = [...LIST_COLUMNS];
-
     // 席数条件テキスト
     const seatCondition = buildSeatConditionText(filters.seatMin, filters.seatMax);
 
@@ -91,8 +88,8 @@ export async function POST(request: NextRequest) {
       const listNum = startListNumber + fileIndex;
       fileIndex++;
 
-      const csv = BOM + generateCSV(headers, categoryRows);
-      const fileName = `${padListNumber(listNum)}【${listGroup}】${timeCategory}_${seatCondition}_${exportDate}.csv`;
+      const csv = BOM + generateEvercallCSV(categoryRows);
+      const fileName = `${padListNumber(listNum)}${listGroup ? `【${listGroup}】` : "_"}${timeCategory}_${seatCondition}_${exportDate}.csv`;
       zip.file(fileName, csv);
 
       savedHistory.push(

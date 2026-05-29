@@ -40,7 +40,7 @@ function CleanupButton() {
     setMsg("");
     try {
       const token = localStorage.getItem("auth_token");
-      const res = await fetch("/api/admin/everycall", {
+      const res = await fetch("/api/admin/evercall", {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -112,7 +112,7 @@ export default function AdminPage() {
   async function loadEcStats(token: string) {
     setEcStatsLoading(true);
     try {
-      const res = await fetch("/api/admin/everycall", {
+      const res = await fetch("/api/admin/evercall", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -168,7 +168,7 @@ export default function AdminPage() {
       let totalInserted = 0;
       for (let i = 0; i < batches; i++) {
         const chunk = phones.slice(i * BATCH, (i + 1) * BATCH);
-        const res = await fetch("/api/admin/everycall", {
+        const res = await fetch("/api/admin/evercall", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

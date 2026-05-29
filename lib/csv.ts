@@ -1,5 +1,28 @@
 import Papa from "papaparse";
 
+// Evercall出力フォーマット定義（2行ヘッダー構造）
+// header: 1行目のシステム列名、label: 2行目の補足ラベル、dbCol: DBの列名（nullは空欄）
+export const EVERCALL_EXPORT_COLUMNS = [
+  { header: "電話番号",  label: "",         dbCol: "電話番号"  },
+  { header: "カナ",      label: "",         dbCol: null        },
+  { header: "名前",      label: "店名",     dbCol: "名前"      },
+  { header: "郵便番号",  label: "",         dbCol: null        },
+  { header: "住所１",    label: "都道府県", dbCol: "住所1"     },
+  { header: "住所２",    label: "住所",     dbCol: "住所2"     },
+  { header: "代表者名",  label: "",         dbCol: null        },
+  { header: "携帯番号",  label: "",         dbCol: "携帯番号"  },
+  { header: "本社番号",  label: "",         dbCol: null        },
+  { header: "URL",       label: "",         dbCol: null        },
+  { header: "好適時間",  label: "",         dbCol: null        },
+  { header: "会社名",    label: "",         dbCol: null        },
+  { header: "備考７",    label: "席数",     dbCol: "席数"      },
+  { header: "備考８",    label: "定休日",   dbCol: "定休日"    },
+  { header: "備考９",    label: "ジャンル", dbCol: "ジャンル"  },
+  { header: "備考１０",  label: "担当者",   dbCol: "担当者"    },
+  { header: "メモ",      label: "",         dbCol: null        },
+  { header: "時間振り",  label: "",         dbCol: "時間振り"  },
+] as const;
+
 export function parseCSV(content: string): Promise<{
   headers: string[];
   data: Record<string, string>[];
@@ -40,6 +63,20 @@ export function generateCSV(
       }, {} as Record<string, string>)
     ),
   });
+}
+
+function csvField(v: string): string {
+  if (/[",\r\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
+  return v;
+}
+
+export function generateEvercallCSV(data: Record<string, string>[]): string {
+  const row1 = EVERCALL_EXPORT_COLUMNS.map(c => csvField(c.header)).join(",");
+  const row2 = EVERCALL_EXPORT_COLUMNS.map(c => csvField(c.label)).join(",");
+  const dataRows = data.map(row =>
+    EVERCALL_EXPORT_COLUMNS.map(c => csvField(c.dbCol ? (row[c.dbCol] ?? "") : "")).join(",")
+  );
+  return [row1, row2, ...dataRows].join("\r\n");
 }
 
 export function extractPhoneNumber(data: Record<string, string>): string | null {

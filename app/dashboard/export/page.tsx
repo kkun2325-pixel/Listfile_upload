@@ -390,7 +390,7 @@ export default function ExportPage() {
     expectedFiles.push({
       cat,
       count,
-      fileName: `${padNum(listNum)}【${listGroup}】${cat}_${seatConditionText}_${todayYMD()}.csv`,
+      fileName: `${padNum(listNum)}${listGroup ? `【${listGroup}】` : "_"}${cat}_${seatConditionText}_${todayYMD()}.csv`,
     });
   }
 
@@ -519,8 +519,8 @@ export default function ExportPage() {
               className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
             />
             <span className="text-sm text-gray-700">
-              Everycall投入済みを除外
-              <span className="ml-1.5 text-xs text-gray-400">（everycall_invested に登録された番号を対象外にする）</span>
+              Evercall投入済みを除外
+              <span className="ml-1.5 text-xs text-gray-400">（evercall_invested に登録された番号を対象外にする）</span>
             </span>
           </label>
         </div>
@@ -613,6 +613,7 @@ export default function ExportPage() {
               onChange={(e) => setListGroup(e.target.value)}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
             >
+              <option value="">　</option>
               {LIST_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
           </div>

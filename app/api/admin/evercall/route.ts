@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bulkInsertEverycallInvested, getEverycallInvestedStats, cleanupEverycallInvested, purgeEverycallInvested } from "@/lib/db";
+import { bulkInsertEvercallInvested, getEvercallInvestedStats, cleanupEvercallInvested, purgeEvercallInvested } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
 
 // GET: グループ別投入済み件数を返す
@@ -9,10 +9,10 @@ export async function GET(request: NextRequest) {
     if (!token) return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
     if (!verifyToken(token)) return NextResponse.json({ success: false, message: "無効なトークンです" }, { status: 401 });
 
-    const stats = await getEverycallInvestedStats();
+    const stats = await getEvercallInvestedStats();
     return NextResponse.json({ success: true, stats });
   } catch (error) {
-    console.error("Everycall GET error:", error);
+    console.error("Evercall GET error:", error);
     return NextResponse.json({ success: false, message: "統計取得中にエラーが発生しました" }, { status: 500 });
   }
 }
@@ -42,11 +42,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "invested_at が未指定です" }, { status: 400 });
     }
 
-    const result = await bulkInsertEverycallInvested(phone_numbers, list_group, invested_at);
+    const result = await bulkInsertEvercallInvested(phone_numbers, list_group, invested_at);
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error("Everycall POST error:", error);
+    console.error("Evercall POST error:", error);
     return NextResponse.json({ success: false, message: msg }, { status: 500 });
   }
 }
@@ -63,15 +63,15 @@ export async function DELETE(request: NextRequest) {
     const purge = request.nextUrl.searchParams.get("purge") === "true";
 
     if (purge) {
-      const result = await purgeEverycallInvested();
+      const result = await purgeEvercallInvested();
       return NextResponse.json({ success: true, ...result });
     }
 
-    const result = await cleanupEverycallInvested();
+    const result = await cleanupEvercallInvested();
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error("Everycall DELETE error:", error);
+    console.error("Evercall DELETE error:", error);
     return NextResponse.json({ success: false, message: msg }, { status: 500 });
   }
 }

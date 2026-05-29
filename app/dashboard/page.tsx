@@ -36,10 +36,6 @@ const RESULT_RANK_COLORS: Record<string, string> = {
   "9": "#10b981", "10": "#ef4444",
 };
 
-const LIST_RANK_COLORS = [
-  "#3b82f6","#8b5cf6","#ec4899","#f59e0b","#10b981","#06b6d4","#6366f1",
-];
-
 // ── コンポーネント ────────────────────────────────────────
 
 function StatCard({
@@ -94,31 +90,12 @@ function ResultRankTooltip({
   );
 }
 
-function ListRankTooltip({
-  active, payload, rankLabels,
-}: {
-  active?: boolean;
-  payload?: { payload: { rank: string; count: number } }[];
-  rankLabels: Record<string, string>;
-}) {
-  if (!active || !payload?.length) return null;
-  const { rank, count } = payload[0].payload;
-  return (
-    <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-md text-xs max-w-[220px]">
-      <p className="font-semibold text-gray-700 mb-0.5">リストランク {rank}</p>
-      <p className="text-gray-500 mb-1 leading-snug">{rankLabels[rank] ?? rank}</p>
-      <p className="font-semibold text-gray-800">{count.toLocaleString()} 件</p>
-    </div>
-  );
-}
-
 // ── メインページ ──────────────────────────────────────────
 
 export default function DashboardPage() {
   const router = useRouter();
   const [stats, setStats]               = useState<Stats | null>(null);
   const [resultRankLabels, setRRL]      = useState<Record<string, string>>({});
-  const [listRankLabels, setLRL]        = useState<Record<string, string>>({});
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState("");
   const [activeTab, setActiveTab]       = useState<TabKey>("飲食SH");
@@ -133,7 +110,6 @@ export default function DashboardPage() {
         if (!data.success) { setError(data.message ?? "エラーが発生しました"); return; }
         setStats(data.stats);
         setRRL(data.result_rank_labels ?? {});
-        setLRL(data.list_rank_labels   ?? {});
       })
       .catch(() => setError("データ取得に失敗しました"))
       .finally(() => setLoading(false));
@@ -155,12 +131,6 @@ export default function DashboardPage() {
 
   const seisaRate = stats.total > 0 ? ((stats.seisa_count / stats.total) * 100).toFixed(1) : "0.0";
   const group     = stats.groups[activeTab] ?? { tokunyu: 0, mitorunyu: 0, rank_distribution: [] };
-
-  const listRankData = stats.list_rank_distribution.map((d, i) => ({
-    ...d,
-    label: `R${d.rank}`,
-    color: LIST_RANK_COLORS[i % LIST_RANK_COLORS.length],
-  }));
 
   return (
     <div className="p-8 max-w-5xl">
@@ -283,41 +253,6 @@ export default function DashboardPage() {
             <p className="text-gray-400 text-sm text-center py-8">データなし</p>
           )}
         </div>
-      </div>
-
-      {/* ─── リストランク別集計 ─── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-4">リストランク別集計</h2>
-        {listRankData.length > 0 ? (
-          <>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={listRankData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => Number(v).toLocaleString()} width={52} />
-                <Tooltip content={<ListRankTooltip rankLabels={listRankLabels} />} />
-                <Bar dataKey="count" radius={[3, 3, 0, 0]}>
-                  {listRankData.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            {/* 凡例 */}
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
-              {listRankData.map(({ rank, color }) => (
-                <span key={rank} className="flex items-center gap-1 text-xs text-gray-500">
-                  <span
-                    className="w-2.5 h-2.5 rounded-sm inline-block shrink-0"
-                    style={{ backgroundColor: color }}
-                  />
-                  R{rank}: {listRankLabels[rank] ?? rank}
-                </span>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="text-gray-400 text-sm text-center py-8">データなし</p>
-        )}
       </div>
 
     </div>

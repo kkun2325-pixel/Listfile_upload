@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const passwordValid = await verifyPassword(password, user.password_hash);
+    const passwordValid = await verifyPassword(password, String(user.password_hash ?? ''));
     if (!passwordValid) {
       return NextResponse.json(
         { success: false, message: "ユーザー名またはパスワードが正しくありません" },
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const token = generateToken(user.id, user.username);
+    const token = generateToken(String(user.id ?? ''), String(user.username ?? ''));
 
     return NextResponse.json(
       { success: true, message: "ログインに成功しました", token, user: { id: user.id, username: user.username } },

@@ -1,84 +1,98 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getGlobalColumnStats,
-  getGlobalTopValues,
-  getGenreDistribution,
-  getAddressesForRegion,
-  getGlobalStatusDistribution,
-} from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
+import { neon } from "@neondatabase/serverless";
 
-const PREFECTURES = [
-  "北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県",
-  "茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県",
-  "新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県",
-  "静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県",
-  "奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県",
-  "徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県",
-  "熊本県","大分県","宮崎県","鹿児島県","沖縄県",
-];
+type SqlFn = { query: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]> }
 
-function extractPrefecture(address: string): string {
-  for (const p of PREFECTURES) {
-    if (address.includes(p)) return p;
-  }
-  return "その他";
-}
+const DEFINED_CATEGORIES = [
+  "14時ランチ終了",
+  "15時ランチ終了",
+  "16時ディナー開始",
+  "17時ディナー開始",
+  "18時ディナー開始",
+  "19時ディナー開始",
+  "通し午前開始",
+  "通し午後開始",
+  "通し18時終了",
+]
 
 export async function GET(request: NextRequest) {
+  const token = extractToken(request.headers.get("authorization"));
+  if (!token || !verifyToken(token))
+    return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
+
+  const { searchParams } = new URL(request.url);
+  const prefectures = searchParams.getAll("prefectures");
+  const seatMin     = searchParams.get("seatMin")  ?? "";
+  const seatMax     = searchParams.get("seatMax")  ?? "";
+  const genres      = searchParams.getAll("genres");
+  const bikou       = searchParams.getAll("bikou");
+
   try {
-    const token = extractToken(request.headers.get("authorization"));
-    if (!token) {
-      return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
-    }
-    const decoded = verifyToken(token);
-    if (!decoded) {
-      return NextResponse.json({ success: false, message: "無効なトークンです" }, { status: 401 });
-    }
+    const sql = neon(process.env.DATABASE_URL!) as unknown as SqlFn;
 
-    // 全集計を並列取得
-    const [colStats, topValues, genreData, addressData, statusData] = await Promise.all([
-      getGlobalColumnStats(),
-      getGlobalTopValues(5),
-      getGenreDistribution(),
-      getAddressesForRegion(),
-      getGlobalStatusDistribution(),
-    ]);
-
-    // top_values をカラム統計にマージ
-    for (const col of colStats.columns) {
-      if (topValues[col]) {
-        colStats.columnStats[col].top_values = topValues[col];
-      }
-    }
-
-    // 都道府県別集計（住所から抽出）
-    const prefMap: Record<string, number> = {};
-    for (const { address, count } of addressData) {
-      const pref = extractPrefecture(address);
-      prefMap[pref] = (prefMap[pref] || 0) + count;
-    }
-    const region_stats = Object.entries(prefMap)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 15);
-
-    return NextResponse.json({
-      success: true,
-      stats: {
-        total_rows:   colStats.totalRows,
-        columns:      colStats.columns,
-        field_stats:  colStats.columnStats,
-        category_stats: genreData,
-        region_stats,
-        status_stats: statusData,
-      },
-    });
-  } catch (error) {
-    console.error("Analysis error:", error);
-    return NextResponse.json(
-      { success: false, message: "分析処理中にエラーが発生しました" },
-      { status: 500 }
+    // 都道府県一覧（フィルター無関係に全件）
+    const prefRows = await sql.query(
+      `SELECT DISTINCT "住所1" FROM csv_data
+       WHERE "住所1" IS NOT NULL AND "住所1" != ''
+       ORDER BY "住所1"`
     );
+    const availablePrefectures = prefRows.map(r => String(r["住所1"]));
+
+    // フィルター WHERE 構築
+    const params: unknown[] = [];
+    const clauses: string[] = [];
+
+    if (prefectures.length > 0) {
+      params.push(prefectures);
+      clauses.push(`"住所1" = ANY($${params.length}::text[])`);
+    }
+    if (seatMin !== "") {
+      params.push(Number(seatMin));
+      clauses.push(`("席数" ~ '^[0-9]+$' AND CAST("席数" AS INTEGER) >= $${params.length})`);
+    }
+    if (seatMax !== "") {
+      params.push(Number(seatMax));
+      clauses.push(`("席数" ~ '^[0-9]+$' AND CAST("席数" AS INTEGER) <= $${params.length})`);
+    }
+    if (genres.length > 0) {
+      params.push(genres);
+      clauses.push(`"ジャンル" = ANY($${params.length}::text[])`);
+    }
+    if (bikou.length > 0) {
+      params.push(bikou);
+      clauses.push(`"備考" = ANY($${params.length}::text[])`);
+    }
+
+    const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const catLiteral  = DEFINED_CATEGORIES.map(c => `'${c.replace(/'/g, "''")}'`).join(",");
+
+    // 時間振り別集計（定義外 → その他・未登録）
+    const countRows = await sql.query(`
+      SELECT
+        CASE
+          WHEN "時間振り" IN (${catLiteral}) THEN "時間振り"
+          ELSE 'その他・未登録'
+        END AS time_category,
+        COUNT(*) AS count
+      FROM csv_data
+      ${whereClause}
+      GROUP BY time_category
+    `, params);
+
+    const countMap: Record<string, number> = {};
+    for (const r of countRows) countMap[String(r.time_category)] = Number(r.count);
+
+    const rows = [
+      ...DEFINED_CATEGORIES.map(cat => ({ time_category: cat, count: countMap[cat] ?? 0 })),
+      { time_category: "その他・未登録", count: countMap["その他・未登録"] ?? 0 },
+    ];
+
+    const total = rows.reduce((s, r) => s + r.count, 0);
+
+    return NextResponse.json({ success: true, prefectures: availablePrefectures, rows, total });
+  } catch (e) {
+    console.error("Analysis error:", e);
+    return NextResponse.json({ success: false, message: String(e) }, { status: 500 });
   }
 }

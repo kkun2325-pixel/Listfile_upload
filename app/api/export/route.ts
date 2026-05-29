@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFilteredRows, LIST_COLUMNS, type ExportFilters } from "@/lib/db";
+import { getFilteredRows, type ExportFilters } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
-import { generateCSV } from "@/lib/csv";
+import { generateEvercallCSV } from "@/lib/csv";
 
 const BOM = "﻿";
 
@@ -21,8 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "該当データが0件です" }, { status: 400 });
     }
 
-    const headers = [...LIST_COLUMNS];
-    const csv = BOM + generateCSV(headers, rows);
+    const csv = BOM + generateEvercallCSV(rows);
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const fileName = customFileName ?? `飲食_架電リスト_${today}.csv`;
 

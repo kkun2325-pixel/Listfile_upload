@@ -46,21 +46,28 @@ const AdminIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
   </svg>
 );
+const ProductivityIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4 shrink-0">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+  </svg>
+);
 
 const menuItems: MenuItem[] = [
-  { label: "TOP",              href: "/dashboard/top",      icon: <HomeIcon />,     exact: true },
-  { label: "ダッシュボード",    href: "/dashboard",          icon: <DashIcon />,     exact: true },
-  { label: "アップロード",      href: "/dashboard/upload",   icon: <UploadIcon /> },
-  { label: "エクスポート",      href: "/dashboard/export",   icon: <ExportIcon /> },
-  { label: "分析",              href: "/dashboard/analysis", icon: <AnalysisIcon /> },
-  { label: "アップロード履歴",  href: "/dashboard/history",  icon: <HistoryIcon /> },
-  { label: "管理",              href: "/dashboard/admin",    icon: <AdminIcon /> },
+  { label: "TOP",              href: "/dashboard/top",          icon: <HomeIcon />,           exact: true },
+  { label: "ダッシュボード",    href: "/dashboard",              icon: <DashIcon />,           exact: true },
+  { label: "アップロード",      href: "/dashboard/upload",       icon: <UploadIcon /> },
+  { label: "エクスポート",      href: "/dashboard/export",       icon: <ExportIcon /> },
+  { label: "分析",              href: "/dashboard/analysis",     icon: <AnalysisIcon /> },
+  { label: "生産性レポート",    href: "/dashboard/productivity", icon: <ProductivityIcon /> },
+  { label: "アップロード履歴",  href: "/dashboard/history",      icon: <HistoryIcon /> },
+  { label: "管理",              href: "/dashboard/admin",        icon: <AdminIcon /> },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [username, setUsername] = useState("");
+  const [role, setRole] = useState<"manager" | "common">("common");
 
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
@@ -68,6 +75,7 @@ export default function Sidebar() {
     try {
       const payload = JSON.parse(atob(token.split(".")[1]));
       setUsername(payload.username || "");
+      setRole(payload.role === "manager" ? "manager" : "common");
     } catch {}
   }, []);
 
@@ -90,7 +98,7 @@ export default function Sidebar() {
 
       {/* ナビゲーション */}
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-        {menuItems.map((item, i) => (
+        {menuItems.filter(item => item.href !== "/dashboard/admin" || role === "manager").map((item, i) => (
           <Link
             key={i}
             href={item.href}
