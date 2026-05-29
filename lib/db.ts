@@ -3,7 +3,7 @@
 // ── クライアント取得 ──────────────────────────────────────
 
 function getDb() {
-  const url = (process.env.DATABASE_URL ?? '').trim()
+  const url = (process.env.DATABASE_URL ?? '').replace(/^﻿/, '').trim()
   if (!url) throw new Error('DATABASE_URL が設定されていません')
   return neon(url)
 }
