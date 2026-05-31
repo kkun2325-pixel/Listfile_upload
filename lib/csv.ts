@@ -88,7 +88,27 @@ export function extractPhoneNumber(data: Record<string, string>): string | null 
   return null;
 }
 
-// 精査ファイルのカラム名をリストDBのカラム名に正規化
+// 席数クレンジング
+// ① 範囲表記(20-30, 20～30, 20〜30) → 平均整数
+// ② 文字混じり(約30, 30席, 30名) → 数字だけ抽出
+// ③ 空白・不明・数字なし → null
+// ④ 正常な整数 → そのまま
+export function cleanseSeats(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (!s || /^(不明|未確認)$/.test(s) || !/\d/.test(s)) return null;
+
+  const rangeMatch = s.match(/(\d+)\s*[-～〜]\s*(\d+)/);
+  if (rangeMatch) {
+    const avg = Math.round((parseInt(rangeMatch[1], 10) + parseInt(rangeMatch[2], 10)) / 2);
+    return String(avg);
+  }
+
+  const numMatch = s.match(/\d+/);
+  return numMatch ? numMatch[0] : null;
+}
+
+// 精査ファイルのカラム名をリストDBのカラム名に正規化・席数クレンジング適用
 export function mapCsvColumnsToDb(row: Record<string, string>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(row)) {
@@ -101,6 +121,9 @@ export function mapCsvColumnsToDb(row: Record<string, string>): Record<string, s
     } else {
       result[key] = value;
     }
+  }
+  if ("席数" in result) {
+    result["席数"] = cleanseSeats(result["席数"]) ?? "";
   }
   return result;
 }
