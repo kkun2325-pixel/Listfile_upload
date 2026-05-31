@@ -105,6 +105,11 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("ZIP export error:", error);
-    return NextResponse.json({ success: false, message: "ZIPエクスポート処理中にエラーが発生しました" }, { status: 500 });
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({
+      success: false,
+      message: "ZIPエクスポート処理中にエラーが発生しました",
+      detail,
+    }, { status: 500 });
   }
 }

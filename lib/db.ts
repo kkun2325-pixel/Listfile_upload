@@ -812,12 +812,12 @@ function buildFilterWhere(filters: ExportFilters): { where: string; args: unknow
     i++
   }
   if (filters.seatMin !== undefined && !isNaN(filters.seatMin)) {
-    parts.push(`("席数" ~ '^[0-9]+' AND CAST("席数" AS INTEGER) >= $${i})`)
+    parts.push(`("席数" ~ '^[0-9]+$' AND CAST("席数" AS INTEGER) >= $${i})`)
     args.push(filters.seatMin)
     i++
   }
   if (filters.seatMax !== undefined && !isNaN(filters.seatMax)) {
-    parts.push(`("席数" ~ '^[0-9]+' AND CAST("席数" AS INTEGER) <= $${i})`)
+    parts.push(`("席数" ~ '^[0-9]+$' AND CAST("席数" AS INTEGER) <= $${i})`)
     args.push(filters.seatMax)
     i++
   }

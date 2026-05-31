@@ -34,6 +34,11 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Export error:", error);
-    return NextResponse.json({ success: false, message: "エクスポート処理中にエラーが発生しました" }, { status: 500 });
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({
+      success: false,
+      message: "エクスポート処理中にエラーが発生しました",
+      detail,
+    }, { status: 500 });
   }
 }
