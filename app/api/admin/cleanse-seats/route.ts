@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
+import { getDb } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
 import { cleanseSeats } from "@/lib/csv";
-
-type SqlFn = { query: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]> }
 
 // GET: 対象件数のプレビュー（更新なし）
 export async function GET(request: NextRequest) {
@@ -12,7 +10,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
 
   try {
-    const sql = neon(process.env.DATABASE_URL!) as unknown as SqlFn;
+    const sql = getDb();
     const rows = await sql.query(`
       SELECT DISTINCT "席数", COUNT(*) AS cnt
       FROM csv_data
@@ -51,7 +49,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
 
   try {
-    const sql = neon(process.env.DATABASE_URL!) as unknown as SqlFn;
+    const sql = getDb();
 
     // 対象の distinct 値を取得
     const dirtyRows = await sql.query(`

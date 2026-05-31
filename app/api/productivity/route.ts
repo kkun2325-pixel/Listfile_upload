@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, extractToken } from "@/lib/auth";
-import { neon } from "@neondatabase/serverless";
-
-type SqlFn = { query: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]> }
+import { getDb } from "@/lib/db";
 
 const VALID_JIKANFURI = ['14時ランチ終了','15時ランチ終了','16時ディナー開始','17時ディナー開始','18時ディナー開始','19時ディナー開始','通し午前開始','通し午後開始','通し18時終了']
 const VALID_GENRE     = ['居酒屋','バー','肉料理','和食','うどん/そば','粉もの','鉄板','アジア料理','洋食','カフェ','軽飲食','レストラン','多国籍','その他飲食店','ラーメン']
@@ -19,7 +17,7 @@ export async function GET(req: NextRequest) {
   const memberName = searchParams.get("member") ?? "";
 
   try {
-    const sql = neon(process.env.DATABASE_URL!) as unknown as SqlFn
+    const sql = getDb()
 
     // 有効値リストを SQL 配列に変換
     const jfList = VALID_JIKANFURI.map(v => `'${v.replace(/'/g, "''")}'`).join(',')

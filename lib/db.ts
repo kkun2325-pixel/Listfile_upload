@@ -1,16 +1,48 @@
-﻿import { neon } from '@neondatabase/serverless'
+﻿import { Pool } from 'pg'
 
-// ── クライアント取得 ──────────────────────────────────────
+// ── 接続プール（シングルトン） ─────────────────────────────
 
-function getDb() {
-  const url = (process.env.DATABASE_URL ?? '').replace(/^﻿/, '').trim()
-  if (!url) throw new Error('DATABASE_URL が設定されていません')
-  return neon(url)
+let _pool: Pool | null = null
+
+function getPool(): Pool {
+  if (!_pool) {
+    const url = (process.env.DATABASE_URL ?? '').replace(/^﻿/, '').trim()
+    if (!url) throw new Error('DATABASE_URL が設定されていません')
+    _pool = new Pool({ connectionString: url, max: 5, idleTimeoutMillis: 30000 })
+  }
+  return _pool
 }
 
-// neon() を動的パラメータ付きで呼び出すためのヘルパー
-// neon v0.6+ では sql(query, params) の呼び出し形式をサポートするが TypeScript 型定義が不完全なため cast が必要
-function dyn(sql: any, query: string, params?: unknown[]): Promise<Record<string, unknown>[]> {
+type Row = Record<string, unknown>
+
+interface DbSql {
+  (strings: TemplateStringsArray, ...values: unknown[]): Promise<Row[]>
+  query: (q: string, params?: unknown[]) => Promise<Row[]>
+}
+
+// タグ付きテンプレートリテラルと .query() の両方をサポートするラッパー
+export function getDb(): DbSql {
+  const pool = getPool()
+
+  async function sql(strings: TemplateStringsArray, ...values: unknown[]): Promise<Row[]> {
+    let text = ''
+    strings.forEach((str, i) => {
+      text += str
+      if (i < values.length) text += `$${i + 1}`
+    })
+    const res = await pool.query(text, values)
+    return res.rows
+  }
+
+  sql.query = async (q: string, params?: unknown[]): Promise<Row[]> => {
+    const res = await pool.query(q, params)
+    return res.rows
+  }
+
+  return sql as DbSql
+}
+
+function dyn(sql: DbSql, query: string, params?: unknown[]): Promise<Row[]> {
   return sql.query(query, params)
 }
 
@@ -745,8 +777,8 @@ export async function bulkInsertEvercallInvested(
 export async function purgeEvercallInvested(): Promise<{ deleted: number }> {
   await ensureEvercallInvestedTable()
   const sql = getDb()
-  const r = await sql`DELETE FROM evercall_invested`
-  return { deleted: (r as unknown as { rowCount: number }).rowCount ?? 0 }
+  const r = await sql`DELETE FROM evercall_invested RETURNING id`
+  return { deleted: r.length }
 }
 
 export async function cleanupEvercallInvested(): Promise<{ deleted: number }> {
@@ -757,8 +789,9 @@ export async function cleanupEvercallInvested(): Promise<{ deleted: number }> {
     WHERE NOT EXISTS (
       SELECT 1 FROM csv_data WHERE csv_data."電話番号" = evercall_invested.phone_number
     )
+    RETURNING id
   `
-  return { deleted: (r as unknown as { rowCount: number }).rowCount ?? 0 }
+  return { deleted: r.length }
 }
 
 export async function getEvercallInvestedStats(): Promise<

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, extractToken } from "@/lib/auth";
-import { neon } from "@neondatabase/serverless";
+import { getDb } from "@/lib/db";
 import { TIME_CATEGORIES } from "@/lib/constants";
-
-type SqlFn = { query: (q: string, p?: unknown[]) => Promise<Record<string, unknown>[]> }
 
 export async function GET(request: NextRequest) {
   const token = extractToken(request.headers.get("authorization"));
@@ -18,7 +16,7 @@ export async function GET(request: NextRequest) {
   const bikou       = searchParams.getAll("bikou");
 
   try {
-    const sql = neon(process.env.DATABASE_URL!) as unknown as SqlFn;
+    const sql = getDb();
 
     // 都道府県一覧（フィルター無関係に全件）
     const prefRows = await sql.query(
