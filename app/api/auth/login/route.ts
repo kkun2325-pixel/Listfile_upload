@@ -29,7 +29,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const token = generateToken(String(user.id ?? ''), String(user.username ?? ''));
+    const role = String(user.role ?? 'common') as import("@/lib/auth").UserRole;
+    const token = generateToken(String(user.id ?? ''), String(user.username ?? ''), role);
 
     return NextResponse.json(
       { success: true, message: "ログインに成功しました", token, user: { id: user.id, username: user.username } },

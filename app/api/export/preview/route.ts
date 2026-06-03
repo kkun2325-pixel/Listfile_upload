@@ -49,7 +49,11 @@ export async function GET(request: NextRequest) {
 
     if (sp.get("seatMin")) filters.seatMin = Number(sp.get("seatMin"));
     if (sp.get("seatMax")) filters.seatMax = Number(sp.get("seatMax"));
-    if (sp.get("excludeInvested") === "true") filters.excludeInvested = true;
+    if (sp.get("excludeInvested") === "true") {
+      filters.excludeInvested = true;
+      const lg = sp.get("listGroup");
+      if (lg) filters.investedListGroup = lg;
+    }
 
     const [total, timeCategoryCounts] = await Promise.all([
       getFilteredCount(filters),

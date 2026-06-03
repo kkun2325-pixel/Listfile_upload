@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: listfile-upload
+    runtime: node
+    region: singapore        # 日本に最も近いリージョン
+    plan: free               # 有料化する場合は starter に変更
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false          # Renderダッシュボードで手動設定
+      - key: JWT_SECRET
+        sync: false          # Renderダッシュボードで手動設定
+      - key: NEXT_PUBLIC_API_URL
+        sync: false          # 例: https://listfile-upload.onrender.com

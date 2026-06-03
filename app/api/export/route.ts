@@ -8,8 +8,9 @@ const BOM = "﻿";
 export async function POST(request: NextRequest) {
   try {
     const token = extractToken(request.headers.get("authorization"));
-    if (!token) return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
-    if (!verifyToken(token)) return NextResponse.json({ success: false, message: "無効なトークンです" }, { status: 401 });
+    const payload = token ? verifyToken(token) : null;
+    if (!payload) return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
+    if (payload.role !== "manager") return NextResponse.json({ success: false, message: "アクセス権限がありません" }, { status: 403 });
 
     const body = await request.json();
     const filters: ExportFilters = body.filters ?? {};

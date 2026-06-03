@@ -18,7 +18,12 @@ const HomeIcon = () => (
 );
 const DashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4 shrink-0">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+  </svg>
+);
+const SearchIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4 shrink-0">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
   </svg>
 );
 const UploadIcon = () => (
@@ -29,11 +34,6 @@ const UploadIcon = () => (
 const ExportIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4 shrink-0">
     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-  </svg>
-);
-const AnalysisIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4 shrink-0">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
   </svg>
 );
 const HistoryIcon = () => (
@@ -53,14 +53,14 @@ const ProductivityIcon = () => (
 );
 
 const menuItems: MenuItem[] = [
-  { label: "TOP",              href: "/dashboard/top",          icon: <HomeIcon />,           exact: true },
-  { label: "ダッシュボード",    href: "/dashboard",              icon: <DashIcon />,           exact: true },
-  { label: "アップロード",      href: "/dashboard/upload",       icon: <UploadIcon /> },
-  { label: "エクスポート",      href: "/dashboard/export",       icon: <ExportIcon /> },
-  { label: "分析",              href: "/dashboard/analysis",     icon: <AnalysisIcon /> },
-  { label: "生産性レポート",    href: "/dashboard/productivity", icon: <ProductivityIcon /> },
-  { label: "アップロード履歴",  href: "/dashboard/history",      icon: <HistoryIcon /> },
-  { label: "管理",              href: "/dashboard/admin",        icon: <AdminIcon /> },
+  { label: "TOP",           href: "/dashboard/top",          icon: <HomeIcon />,           exact: true },
+  { label: "ダッシュボード", href: "/dashboard",              icon: <DashIcon />,           exact: true },
+  { label: "アップロード",   href: "/dashboard/upload",       icon: <UploadIcon /> },
+  { label: "エクスポート",   href: "/dashboard/export",       icon: <ExportIcon /> },
+  { label: "店舗検索",       href: "/dashboard/store",        icon: <SearchIcon /> },
+  { label: "レポート",       href: "/dashboard/productivity", icon: <ProductivityIcon /> },
+  { label: "履歴",           href: "/dashboard/history",      icon: <HistoryIcon /> },
+  { label: "管理",           href: "/dashboard/admin",        icon: <AdminIcon /> },
 ];
 
 export default function Sidebar() {
@@ -98,7 +98,14 @@ export default function Sidebar() {
 
       {/* ナビゲーション */}
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-        {menuItems.filter(item => item.href !== "/dashboard/admin" || role === "manager").map((item, i) => (
+        {menuItems.filter(item => {
+          if (role !== "manager" && [
+            "/dashboard/admin",
+            "/dashboard/productivity",
+            "/dashboard/export",
+          ].includes(item.href)) return false;
+          return true;
+        }).map((item, i) => (
           <Link
             key={i}
             href={item.href}

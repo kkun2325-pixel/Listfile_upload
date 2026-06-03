@@ -27,6 +27,9 @@ export async function GET(request: NextRequest) {
       fill_count:       fillCounts[u.id as string] ?? 0,
       uploaded_at:      u.uploaded_at,
       status:           u.status,
+      work_hours:       u.work_hours != null ? Number(u.work_hours) : null,
+      worker_name:      u.worker_name  ?? null,
+      report_date:      u.report_date  ?? null,
     }));
 
     return NextResponse.json({ success: true, uploads: result }, { status: 200 });

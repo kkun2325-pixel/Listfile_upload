@@ -7,6 +7,8 @@ import Link from "next/link";
 interface HistoryItem {
   id: string;
   username: string;
+  worker_name: string | null;
+  report_date: string | null;
   original_filename: string;
   row_count: number;
   inserted_count: number;
@@ -14,6 +16,7 @@ interface HistoryItem {
   fill_count: number;
   uploaded_at: string;
   status: string;
+  work_hours: number | null;
 }
 
 export default function HistoryPage() {
@@ -88,6 +91,8 @@ export default function HistoryPage() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">ユーザー名</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">担当者名</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">報告対象日</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">ファイル名</th>
                   <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 whitespace-nowrap">行数</th>
                   <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 whitespace-nowrap">
@@ -96,6 +101,7 @@ export default function HistoryPage() {
                   <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 whitespace-nowrap">
                     <span className="text-blue-700">更新件数</span>
                   </th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 whitespace-nowrap">作業時間</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">アップロード日時</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">操作</th>
                 </tr>
@@ -110,6 +116,14 @@ export default function HistoryPage() {
                         </div>
                         <span className="text-gray-700 font-medium">{item.username}</span>
                       </div>
+                    </td>
+                    <td className="px-5 py-3.5 text-sm text-gray-700">
+                      {item.worker_name ?? <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-5 py-3.5 text-sm text-gray-700 whitespace-nowrap">
+                      {item.report_date
+                        ? new Date(item.report_date + "T00:00:00").toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" })
+                        : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-5 py-3.5 font-medium text-gray-900 max-w-xs truncate">
                       {item.original_filename}
@@ -134,6 +148,9 @@ export default function HistoryPage() {
                       ) : (
                         <span className="text-gray-300 text-xs">—</span>
                       )}
+                    </td>
+                    <td className="px-5 py-3.5 text-right text-xs text-gray-500 whitespace-nowrap">
+                      {item.work_hours != null ? `${item.work_hours}h` : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-5 py-3.5 text-gray-500 text-xs whitespace-nowrap">
                       {new Date(item.uploaded_at).toLocaleString("ja-JP")}

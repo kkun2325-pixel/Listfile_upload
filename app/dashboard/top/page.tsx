@@ -31,7 +31,7 @@ const cards = [
   },
   {
     title: "アップロード",
-    desc: "CSVファイルをアップロード",
+    desc: "CSVファイルのアップロード・履歴確認",
     href: "/dashboard/upload",
     bg: "bg-green-50",
     border: "border-green-200",
@@ -67,7 +67,7 @@ const cards = [
   },
   {
     title: "アップロード履歴",
-    desc: "過去のアップロードを確認",
+    desc: "担当者・作業時間・アップロード履歴",
     href: "/dashboard/history",
     bg: "bg-orange-50",
     border: "border-orange-200",
@@ -78,7 +78,7 @@ const cards = [
     ),
   },
   {
-    title: "生産性レポート",
+    title: "レポート",
     desc: "担当者別の精査実績・生産性指標",
     href: "/dashboard/productivity",
     bg: "bg-indigo-50",

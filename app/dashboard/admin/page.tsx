@@ -221,6 +221,9 @@ export default function AdminPage() {
         <p className="text-sm text-gray-500 mt-1">データベース管理・スキーマ操作</p>
       </div>
 
+      {/* ─── 精査数診断 ─── */}
+      <SeisaDiagSection />
+
       {/* ─── 席数クレンジング ─── */}
       <CleanseSeatSection />
 
@@ -361,6 +364,179 @@ export default function AdminPage() {
 
       {/* ─── チーム・メンバー管理 ───────────────────────────── */}
       <TeamManagementSection />
+
+      {/* ─── 空行クリーンアップ ──────────────────────────────── */}
+      <CleanEmptyRowsSection />
+
+      {/* ─── 不正電話番号クリーンアップ ──────────────────────── */}
+      <CleanInvalidPhonesSection />
+    </div>
+  );
+}
+
+// ── 精査数診断コンポーネント ──────────────────────────────
+
+interface FunnelStep { step: string; count: number }
+interface DiagSample {
+  担当者: string; worker_name: string; report_date: string;
+  抽出名前: string; 抽出日付4桁: string; 期待日付: string; 日付一致: boolean;
+}
+
+function SeisaDiagSection() {
+  const [start, setStart]     = useState("2026-06-01");
+  const [end, setEnd]         = useState("");
+  const [loading, setLoading] = useState(false);
+  const [funnel, setFunnel]   = useState<FunnelStep[] | null>(null);
+  const [samples, setSamples] = useState<DiagSample[]>([]);
+  const [error, setError]     = useState("");
+  const [open, setOpen]       = useState(false);
+
+  const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") ?? "" : "";
+
+  async function run() {
+    setLoading(true); setError(""); setFunnel(null); setSamples([]);
+    try {
+      const sp = new URLSearchParams({ start });
+      if (end) sp.set("end", end);
+      const res = await fetch(`/api/admin/seisa-diag?${sp}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (!d.success) { setError(d.message ?? "エラー"); return; }
+      setFunnel(d.funnel);
+      setSamples(d.samples ?? []);
+    } catch (e) { setError(String(e)); }
+    finally { setLoading(false); }
+  }
+
+  const maxCount = funnel ? funnel[0]?.count ?? 1 : 1;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <button className="w-full flex items-center justify-between px-6 py-4"
+        onClick={() => setOpen(v => !v)}>
+        <div>
+          <h2 className="text-base font-semibold text-gray-900 text-left">精査数カウント診断</h2>
+          <p className="text-xs text-gray-400 mt-0.5 text-left">どの条件で件数が落ちているか調べます</p>
+        </div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+          className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="px-6 pb-6 border-t border-gray-100 space-y-5">
+          {/* 期間指定 */}
+          <div className="flex flex-wrap gap-3 items-end pt-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">開始日</label>
+              <input type="date" value={start} onChange={e => setStart(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">終了日</label>
+              <input type="date" value={end} onChange={e => setEnd(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            </div>
+            <button onClick={run} disabled={loading}
+              className="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-40">
+              {loading ? "診断中..." : "診断を実行"}
+            </button>
+          </div>
+
+          {error && <p className="text-sm text-red-500">{error}</p>}
+
+          {/* ファネル表示 */}
+          {funnel && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">件数ファネル</p>
+              {funnel.map((f, i) => {
+                const prev = i > 0 ? funnel[i - 1].count : f.count;
+                const drop = prev - f.count;
+                const pct  = maxCount > 0 ? Math.round(f.count / maxCount * 100) : 0;
+                const isBigDrop = drop > 0 && drop / (prev || 1) > 0.1;
+                return (
+                  <div key={i}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-gray-600">{f.step}</span>
+                      <div className="flex items-center gap-2">
+                        {drop > 0 && (
+                          <span className={`text-xs font-medium ${isBigDrop ? "text-red-500" : "text-gray-400"}`}>
+                            {isBigDrop ? "▼" : "↓"} {drop.toLocaleString()} 件減
+                          </span>
+                        )}
+                        <span className="text-sm font-bold text-gray-900 w-24 text-right">
+                          {f.count.toLocaleString()} 件
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${isBigDrop ? "bg-red-400" : "bg-blue-400"}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* 最終的な損失率 */}
+              {funnel.length > 1 && (
+                <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-gray-600">
+                    最終精査数: <span className="font-bold text-gray-900">{funnel[funnel.length - 1].count.toLocaleString()} 件</span>
+                    <span className="mx-2 text-gray-300">/</span>
+                    時間振り入力済み全件: <span className="font-bold text-gray-900">{funnel[0].count.toLocaleString()} 件</span>
+                    <span className="mx-2 text-gray-300">→</span>
+                    <span className={`font-bold ${funnel[funnel.length-1].count / (funnel[0].count || 1) < 0.8 ? "text-red-500" : "text-green-600"}`}>
+                      {maxCount > 0 ? Math.round(funnel[funnel.length-1].count / maxCount * 100) : 0}% がカウントされている
+                    </span>
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* サンプル */}
+          {samples.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                担当者列サンプル（最新10件）
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {["担当者列の値", "worker_name", "作業日", "抽出名前", "抽出日付", "期待日付", "一致?"].map(h => (
+                        <th key={h} className="px-3 py-2 text-left font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {samples.map((s, i) => (
+                      <tr key={i} className={s.日付一致 ? "" : "bg-red-50"}>
+                        <td className="px-3 py-2 font-mono text-gray-800">{s.担当者}</td>
+                        <td className="px-3 py-2 text-gray-600">{s.worker_name}</td>
+                        <td className="px-3 py-2 text-gray-600">{s.report_date}</td>
+                        <td className="px-3 py-2 text-gray-600">{s.抽出名前}</td>
+                        <td className={`px-3 py-2 font-mono ${!s.日付一致 ? "text-red-600 font-bold" : "text-gray-600"}`}>{s.抽出日付4桁}</td>
+                        <td className="px-3 py-2 font-mono text-gray-600">{s.期待日付}</td>
+                        <td className="px-3 py-2">
+                          {s.日付一致
+                            ? <span className="text-green-600 font-bold">✓</span>
+                            : <span className="text-red-500 font-bold">✗</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-gray-400">赤行 = 日付不一致のためカウントから除外されているレコード</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -609,6 +785,185 @@ function TeamManagementSection() {
             </div>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ── 空行クリーンアップ ────────────────────────────────────────
+
+function CleanEmptyRowsSection() {
+  const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [status, setStatus]             = useState<"idle" | "previewing" | "deleting" | "done" | "error">("idle");
+  const [deletedCount, setDeletedCount] = useState<number | null>(null);
+  const [msg, setMsg]                   = useState("");
+
+  const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") ?? "" : "";
+
+  async function handlePreview() {
+    setStatus("previewing"); setMsg(""); setPreviewCount(null);
+    try {
+      const res = await fetch("/api/admin/clean-empty-rows", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (!d.success) { setStatus("error"); setMsg(d.message ?? "エラー"); return; }
+      setPreviewCount(d.count);
+      setStatus("idle");
+    } catch (e) { setStatus("error"); setMsg(String(e)); }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`名前・電話番号・住所がすべて空のレコード ${previewCount?.toLocaleString()} 件を削除します。よろしいですか？`)) return;
+    setStatus("deleting"); setMsg("");
+    try {
+      const res = await fetch("/api/admin/clean-empty-rows", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (!d.success) { setStatus("error"); setMsg(d.message ?? "エラー"); return; }
+      setDeletedCount(d.deleted);
+      setPreviewCount(null);
+      setStatus("done");
+    } catch (e) { setStatus("error"); setMsg(String(e)); }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 className="text-base font-semibold text-gray-900 mb-1">空行クリーンアップ</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        名前・電話番号・住所1・住所2 がすべて空のレコードを削除します。
+      </p>
+
+      <div className="flex gap-2">
+        <button onClick={handlePreview} disabled={status === "previewing" || status === "deleting"}
+          className="px-4 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors">
+          {status === "previewing" ? "確認中..." : "件数を確認"}
+        </button>
+        {previewCount !== null && previewCount > 0 && (
+          <button onClick={handleDelete} disabled={status === "deleting"}
+            className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:opacity-40 transition-colors">
+            {status === "deleting" ? "削除中..." : `${previewCount.toLocaleString()} 件を削除`}
+          </button>
+        )}
+      </div>
+
+      {previewCount !== null && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm font-medium text-amber-800">
+            対象: <span className="font-bold">{previewCount.toLocaleString()} 件</span>
+          </p>
+          {previewCount === 0 && (
+            <p className="text-xs text-amber-600 mt-1">削除対象のレコードはありません</p>
+          )}
+        </div>
+      )}
+
+      {status === "done" && deletedCount !== null && (
+        <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+          <p className="text-sm font-medium text-green-800">
+            ✓ <span className="font-bold">{deletedCount.toLocaleString()} 件</span> を削除しました
+          </p>
+        </div>
+      )}
+
+      {status === "error" && msg && (
+        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{msg}</div>
+      )}
+    </div>
+  );
+}
+
+// ── 不正電話番号クリーンアップ ────────────────────────────────
+
+function CleanInvalidPhonesSection() {
+  const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [samples, setSamples]           = useState<string[]>([]);
+  const [status, setStatus]             = useState<"idle" | "previewing" | "deleting" | "done" | "error">("idle");
+  const [deletedCount, setDeletedCount] = useState<number | null>(null);
+  const [msg, setMsg]                   = useState("");
+
+  const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") ?? "" : "";
+
+  async function handlePreview() {
+    setStatus("previewing"); setMsg(""); setPreviewCount(null); setSamples([]);
+    try {
+      const res = await fetch("/api/admin/clean-invalid-phones", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (!d.success) { setStatus("error"); setMsg(d.message ?? "エラー"); return; }
+      setPreviewCount(d.count);
+      setSamples(d.samples ?? []);
+      setStatus("idle");
+    } catch (e) { setStatus("error"); setMsg(String(e)); }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`"20000" で始まる10桁の電話番号 ${previewCount?.toLocaleString()} 件を削除します。よろしいですか？`)) return;
+    setStatus("deleting"); setMsg("");
+    try {
+      const res = await fetch("/api/admin/clean-invalid-phones", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (!d.success) { setStatus("error"); setMsg(d.message ?? "エラー"); return; }
+      setDeletedCount(d.deleted);
+      setPreviewCount(null);
+      setSamples([]);
+      setStatus("done");
+    } catch (e) { setStatus("error"); setMsg(String(e)); }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 className="text-base font-semibold text-gray-900 mb-1">不正電話番号クリーンアップ</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        <code className="bg-gray-100 px-1 rounded text-xs">20000</code> で始まる10桁の電話番号（電話番号ではない疑似データ）をDBから削除します。
+      </p>
+
+      <div className="flex gap-2">
+        <button onClick={handlePreview} disabled={status === "previewing" || status === "deleting"}
+          className="px-4 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors">
+          {status === "previewing" ? "確認中..." : "件数を確認"}
+        </button>
+        {previewCount !== null && previewCount > 0 && (
+          <button onClick={handleDelete} disabled={status === "deleting"}
+            className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:opacity-40 transition-colors">
+            {status === "deleting" ? "削除中..." : `${previewCount.toLocaleString()} 件を削除`}
+          </button>
+        )}
+      </div>
+
+      {previewCount !== null && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm font-medium text-amber-800">
+            対象: <span className="font-bold">{previewCount.toLocaleString()} 件</span>
+          </p>
+          {samples.length > 0 && (
+            <p className="text-xs text-amber-700 mt-1">
+              サンプル: {samples.slice(0, 5).join(", ")}
+              {samples.length > 5 && " ..."}
+            </p>
+          )}
+          {previewCount === 0 && (
+            <p className="text-xs text-amber-600 mt-1">削除対象のレコードはありません</p>
+          )}
+        </div>
+      )}
+
+      {status === "done" && deletedCount !== null && (
+        <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+          <p className="text-sm font-medium text-green-800">
+            ✓ <span className="font-bold">{deletedCount.toLocaleString()} 件</span> を削除しました
+          </p>
+        </div>
+      )}
+
+      {status === "error" && msg && (
+        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{msg}</div>
       )}
     </div>
   );
