@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -16,11 +16,12 @@ interface GroupStat {
 }
 
 interface Stats {
-  total:         number;
-  seisa_count:   number;
-  unseisa_count: number;
-  tokunyu_count: number;
-  missing: { jikanfuri: number; sekisuu: number; genre: number; bikou: number };
+  total:               number;
+  seisa_count:         number;
+  unseisa_count:       number;
+  tokunyu_count:       number;
+  honsha_seisa_count?: number;
+  missing: { jikanfuri: number; teikyu: number; sekisuu: number; genre: number; bikou: number };
   groups: Record<string, GroupStat>;
   list_rank_distribution: { rank: string; count: number }[];
 }
@@ -131,6 +132,7 @@ export default function DashboardPage() {
 
   const seisaRate = stats.total > 0 ? ((stats.seisa_count / stats.total) * 100).toFixed(1) : "0.0";
   const group     = stats.groups[activeTab] ?? { tokunyu: 0, mitorunyu: 0, rank_distribution: [] };
+  const rankChartData = group.rank_distribution.filter(d => d.rank !== '0');
 
   return (
     <div className="p-8 max-w-5xl">
@@ -154,18 +156,22 @@ export default function DashboardPage() {
       </div>
 
       {/* ─── 行①：メインサマリー ─── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
         <StatCard
           label="総リスト数" value={stats.total} sub="DB全件数"
           valueColor="text-gray-800"
         />
         <StatCard
-          label="精査済数" value={stats.seisa_count} sub={`精査率 ${seisaRate}%`}
+          label="店舗精査済数" value={stats.seisa_count} sub={`精査率 ${seisaRate}%`}
           valueColor="text-blue-600"
         />
         <StatCard
           label="未精査数" value={stats.unseisa_count} sub="要精査"
           valueColor="text-orange-500"
+        />
+        <StatCard
+          label="本社精査済数" value={stats.honsha_seisa_count ?? 0} sub="本社精査 = 1"
+          valueColor="text-purple-600" bgClass="bg-purple-50 border-purple-200"
         />
         <StatCard
           label="投入可能数" value={stats.tokunyu_count} sub="精査済み＆未投入"
@@ -178,8 +184,9 @@ export default function DashboardPage() {
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-0.5">
           未精査内訳（欠損カラム別）
         </p>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <MissingCard label="時間振り未登録" value={stats.missing.jikanfuri} total={stats.total} />
+          <MissingCard label="定休日未登録"   value={stats.missing.teikyu}    total={stats.total} />
           <MissingCard label="席数未登録"     value={stats.missing.sekisuu}   total={stats.total} />
           <MissingCard label="ジャンル未登録" value={stats.missing.genre}     total={stats.total} />
           <MissingCard label="備考未登録"     value={stats.missing.bikou}     total={stats.total} />
@@ -222,15 +229,15 @@ export default function DashboardPage() {
 
           {/* 結果ランク棒グラフ */}
           <p className="text-sm font-semibold text-gray-700 mb-3">結果ランク別件数</p>
-          {group.rank_distribution.length > 0 ? (
+          {rankChartData.length > 0 ? (
             <>
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={group.rank_distribution} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                <BarChart data={rankChartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
                   <XAxis dataKey="rank" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => Number(v).toLocaleString()} width={52} />
                   <Tooltip content={<ResultRankTooltip rankLabels={resultRankLabels} />} />
                   <Bar dataKey="count" radius={[3, 3, 0, 0]}>
-                    {group.rank_distribution.map((entry, i) => (
+                    {rankChartData.map((entry, i) => (
                       <Cell key={i} fill={RESULT_RANK_COLORS[entry.rank] ?? "#6b7280"} />
                     ))}
                   </Bar>
@@ -238,7 +245,7 @@ export default function DashboardPage() {
               </ResponsiveContainer>
               {/* 凡例 */}
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
-                {group.rank_distribution.map(({ rank }) => (
+                {rankChartData.map(({ rank }) => (
                   <span key={rank} className="flex items-center gap-1 text-xs text-gray-500">
                     <span
                       className="w-2.5 h-2.5 rounded-sm inline-block shrink-0"

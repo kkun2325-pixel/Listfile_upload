@@ -46,6 +46,31 @@ function dyn(sql: DbSql, query: string, params?: unknown[]): Promise<Row[]> {
   return sql.query(query, params)
 }
 
+// ── トランザクションヘルパー ──────────────────────────────────
+// fn 内で使う query は同一コネクション上で実行される。
+// BEGIN/COMMIT/ROLLBACK は自動管理。
+export type TxQuery = (q: string, params?: unknown[]) => Promise<Row[]>
+
+export async function withTransaction<T>(fn: (query: TxQuery) => Promise<T>): Promise<T> {
+  const pool   = getPool()
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+    const queryFn: TxQuery = async (q, params) => {
+      const res = await client.query(q, params as unknown[])
+      return res.rows as Row[]
+    }
+    const result = await fn(queryFn)
+    await client.query("COMMIT")
+    return result
+  } catch (e) {
+    await client.query("ROLLBACK")
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
 // ── リストDBカラム定義 ──────────────────────────────────────
 
 export const LIST_COLUMNS = [
@@ -298,16 +323,17 @@ export async function getUserById(id: string) {
 export async function createCSVUpload(
   id: string, userId: string, filename: string,
   originalFilename: string, fileSize: number, rowCount: number,
-  insertedCount = 0, updatedCount = 0, workHours: number | null = null
+  insertedCount = 0, updatedCount = 0, workHours: number | null = null,
+  workerName: string | null = null, reportDate: string | null = null, teamName: string | null = null
 ) {
   const sql = getDb()
   const now = new Date().toISOString()
   await dyn(sql, `
     INSERT INTO csv_uploads
-      (id, user_id, filename, original_filename, file_size, row_count, uploaded_at, status, inserted_count, updated_count, work_hours)
+      (id, user_id, filename, original_filename, file_size, row_count, uploaded_at, status, inserted_count, updated_count, work_hours, worker_name, report_date, team_name)
     VALUES
-      ($1, $2, $3, $4, $5, $6, $7, 'processed', $8, $9, $10)
-  `, [id, userId, filename, originalFilename, fileSize, rowCount, now, insertedCount, updatedCount, workHours])
+      ($1, $2, $3, $4, $5, $6, $7, 'processed', $8, $9, $10, $11, $12, $13)
+  `, [id, userId, filename, originalFilename, fileSize, rowCount, now, insertedCount, updatedCount, workHours, workerName, reportDate, teamName])
 }
 
 export async function updateCSVUploadCounts(id: string, insertedCount: number, updatedCount: number) {
@@ -376,7 +402,14 @@ export async function batchUpsertCSVRows(
           "担当者"         = $12,
           "店舗精査"       = $13,
           "本社精査"       = $14,
-          is_duplicate = 1, updated_at = $15, upload_id = $16
+          is_duplicate = 1, updated_at = $15, upload_id = $16,
+          is_data_changed = CASE WHEN
+            "時間振り" IS DISTINCT FROM $1 OR
+            "定休日"   IS DISTINCT FROM $2 OR
+            "席数"     IS DISTINCT FROM $3 OR
+            "ジャンル" IS DISTINCT FROM $4 OR
+            "備考"     IS DISTINCT FROM $5
+          THEN 1 ELSE 0 END
         WHERE "電話番号" = $17`,
         [
           row["時間振り"]       ?? null,
@@ -465,11 +498,12 @@ export interface GroupStat {
 }
 
 export interface DashboardStatsV2 {
-  total:         number
-  seisa_count:   number
-  unseisa_count: number
-  tokunyu_count: number
-  missing: { jikanfuri: number; sekisuu: number; genre: number; bikou: number }
+  total:               number
+  seisa_count:         number
+  unseisa_count:       number
+  tokunyu_count:       number
+  honsha_seisa_count:  number
+  missing: { jikanfuri: number; teikyu: number; sekisuu: number; genre: number; bikou: number }
   groups: Record<string, GroupStat>
   list_rank_distribution: { rank: string; count: number }[]
 }
@@ -504,25 +538,30 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
       SELECT
         COUNT(*) AS total,
         SUM(CASE WHEN "時間振り" IS NOT NULL AND "時間振り" != ''
-                      AND "席数"     IS NOT NULL AND "席数"     != ''
+                      AND "定休日" IS NOT NULL AND "定休日" != ''
+                      AND "席数"   IS NOT NULL AND "席数"   != ''
                       AND "ジャンル" IS NOT NULL AND "ジャンル" != ''
-                      AND "備考"     IS NOT NULL AND "備考"     != ''
+                      AND "備考"   IS NOT NULL AND "備考"   != ''
                  THEN 1 ELSE 0 END) AS seisa_count,
-        SUM(CASE WHEN ("時間振り"  IS NULL OR "時間振り"  = '')
-                   OR ("席数"     IS NULL OR "席数"     = '')
+        SUM(CASE WHEN ("時間振り" IS NULL OR "時間振り" = '')
+                   OR ("定休日"  IS NULL OR "定休日"  = '')
+                   OR ("席数"    IS NULL OR "席数"    = '')
                    OR ("ジャンル" IS NULL OR "ジャンル" = '')
-                   OR ("備考"     IS NULL OR "備考"     = '')
+                   OR ("備考"    IS NULL OR "備考"    = '')
                  THEN 1 ELSE 0 END) AS unseisa_count,
         SUM(CASE WHEN ("最大進捗" IS NULL OR "最大進捗" = '' OR "最大進捗" = '0')
                       AND "時間振り" IS NOT NULL AND "時間振り" != ''
+                      AND "定休日"  IS NOT NULL AND "定休日"  != ''
                       AND "席数"    IS NOT NULL AND "席数"    != ''
                       AND "ジャンル" IS NOT NULL AND "ジャンル" != ''
                       AND "備考"    IS NOT NULL AND "備考"    != ''
                  THEN 1 ELSE 0 END) AS tokunyu_count,
+        SUM(CASE WHEN "本社精査" = '1' THEN 1 ELSE 0 END) AS honsha_seisa_count,
         SUM(CASE WHEN "時間振り" IS NULL OR "時間振り" = '' THEN 1 ELSE 0 END) AS missing_jikanfuri,
-        SUM(CASE WHEN "席数"     IS NULL OR "席数"     = '' THEN 1 ELSE 0 END) AS missing_sekisuu,
+        SUM(CASE WHEN "定休日"  IS NULL OR "定休日"  = '' THEN 1 ELSE 0 END) AS missing_teikyu,
+        SUM(CASE WHEN "席数"    IS NULL OR "席数"    = '' THEN 1 ELSE 0 END) AS missing_sekisuu,
         SUM(CASE WHEN "ジャンル" IS NULL OR "ジャンル" = '' THEN 1 ELSE 0 END) AS missing_genre,
-        SUM(CASE WHEN "備考"     IS NULL OR "備考"     = '' THEN 1 ELSE 0 END) AS missing_bikou
+        SUM(CASE WHEN "備考"    IS NULL OR "備考"    = '' THEN 1 ELSE 0 END) AS missing_bikou
       FROM csv_data
     `,
     sql`SELECT "飲食SH最大進捗"      AS rank_val, COUNT(*) AS cnt FROM csv_data GROUP BY "飲食SH最大進捗"`,
@@ -575,9 +614,11 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
     total:         Number(s.total         ?? 0),
     seisa_count:   Number(s.seisa_count   ?? 0),
     unseisa_count: Number(s.unseisa_count ?? 0),
-    tokunyu_count: Number(s.tokunyu_count ?? 0),
+    tokunyu_count:       Number(s.tokunyu_count       ?? 0),
+    honsha_seisa_count:  Number(s.honsha_seisa_count  ?? 0),
     missing: {
       jikanfuri: Number(s.missing_jikanfuri ?? 0),
+      teikyu:    Number(s.missing_teikyu    ?? 0),
       sekisuu:   Number(s.missing_sekisuu   ?? 0),
       genre:     Number(s.missing_genre     ?? 0),
       bikou:     Number(s.missing_bikou     ?? 0),
@@ -720,7 +761,7 @@ export async function getAllCSVUploadsWithUsers() {
   return sql`
     SELECT
       cu.id, cu.original_filename, cu.row_count, cu.uploaded_at, cu.status,
-      cu.inserted_count, cu.updated_count,
+      cu.inserted_count, cu.updated_count, cu.work_hours, cu.worker_name, cu.report_date, cu.team_name,
       u.username
     FROM csv_uploads cu
     JOIN users u ON cu.user_id = u.id
@@ -822,12 +863,18 @@ export interface ExportFilters {
   seatMax?: number
   bikou?: string[]
   excludeInvested?: boolean
+  investedListGroup?: string  // ZIPエクスポートで選択したリストグループ
 }
 
 function buildFilterWhere(filters: ExportFilters): { where: string; args: unknown[] } {
   const parts: string[] = []
   const args: unknown[] = []
   let i = 1
+
+  // 架電可能な行のみ対象（電話番号・名前・住所2が必須）
+  parts.push(`"電話番号" IS NOT NULL AND "電話番号" != '' AND "電話番号" NOT LIKE '#%'`)
+  parts.push(`"名前"  IS NOT NULL AND "名前"  != ''`)
+  parts.push(`"住所2" IS NOT NULL AND "住所2" != ''`)
 
   if (filters.genres && filters.genres.length > 0) {
     parts.push(`"ジャンル" = ANY($${i}::text[])`)
@@ -855,7 +902,13 @@ function buildFilterWhere(filters: ExportFilters): { where: string; args: unknow
     i++
   }
   if (filters.excludeInvested === true) {
-    parts.push(`NOT EXISTS (SELECT 1 FROM evercall_invested ei WHERE ei.phone_number = csv_data."電話番号")`)
+    if (filters.investedListGroup) {
+      parts.push(`NOT EXISTS (SELECT 1 FROM evercall_invested ei WHERE ei.phone_number = csv_data."電話番号" AND ei.list_group = $${i})`)
+      args.push(filters.investedListGroup)
+      i++
+    } else {
+      parts.push(`NOT EXISTS (SELECT 1 FROM evercall_invested ei WHERE ei.phone_number = csv_data."電話番号")`)
+    }
   }
 
   return {
@@ -1050,6 +1103,10 @@ export async function ensureTeamTables() {
     )
   `)
   await dyn(sql, `ALTER TABLE csv_uploads ADD COLUMN IF NOT EXISTS work_hours REAL`)
+  await dyn(sql, `ALTER TABLE csv_uploads ADD COLUMN IF NOT EXISTS worker_name TEXT`)
+  await dyn(sql, `ALTER TABLE csv_uploads ADD COLUMN IF NOT EXISTS report_date TEXT`)
+  await dyn(sql, `ALTER TABLE csv_uploads ADD COLUMN IF NOT EXISTS team_name TEXT`)
+  await dyn(sql, `ALTER TABLE csv_data ADD COLUMN IF NOT EXISTS is_data_changed INTEGER NOT NULL DEFAULT 1`)
 }
 
 export async function getTeams() {
