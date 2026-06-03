@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import {
   getFilteredRows,
   saveExportHistory,
+  bulkInsertEvercallInvested,
   type ExportFilters,
 } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
@@ -29,14 +30,20 @@ function padListNumber(n: number): string {
 export async function POST(request: NextRequest) {
   try {
     const token = extractToken(request.headers.get("authorization"));
-    if (!token) return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
-    if (!verifyToken(token)) return NextResponse.json({ success: false, message: "無効なトークンです" }, { status: 401 });
+    const payload = token ? verifyToken(token) : null;
+    if (!payload) return NextResponse.json({ success: false, message: "認証が必要です" }, { status: 401 });
+    if (payload.role !== "manager") return NextResponse.json({ success: false, message: "アクセス権限がありません" }, { status: 403 });
 
     const body = await request.json();
     const filters: ExportFilters = body.filters ?? {};
     const listGroup: string = body.listGroup ?? "飲食SH";
     const startListNumber: number = Number(body.startListNumber ?? 1);
     const exportDate: string = body.exportDate ?? new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+    // Evercall除外はZIPエクスポートで選択したリストグループに限定
+    if (filters.excludeInvested) {
+      filters.investedListGroup = listGroup;
+    }
 
     // 時間振りフィルターを適用した全データを取得
     const allRows = await getFilteredRows(filters);
@@ -93,8 +100,22 @@ export async function POST(request: NextRequest) {
 
     await Promise.all(savedHistory);
 
+    // ── エクスポート対象の電話番号を evercall_invested に自動登録 ──
+    // ZIPダウンロード完了と同時に、選択したリストグループで投入済みとして記録する
+    const phones = allRows
+      .map(r => r["電話番号"])
+      .filter((p): p is string => typeof p === "string" && p.trim() !== "");
+    if (phones.length > 0) {
+      try {
+        await bulkInsertEvercallInvested(phones, listGroup, exportDate);
+      } catch (e) {
+        // 投入フラグ登録の失敗はZIPダウンロードをブロックしない（ログのみ）
+        console.error("evercall_invested 登録エラー:", e);
+      }
+    }
+
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
-    const zipFileName = `飲食_エクスポート_${exportDate}.zip`;
+    const zipFileName = `${listGroup}_エクスポート_${exportDate}.zip`;
 
     return new NextResponse(new Uint8Array(zipBuffer), {
       status: 200,
