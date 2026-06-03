@@ -788,8 +788,7 @@ async function ensureEvercallInvestedTable() {
 }
 
 function normalizePhone(p: string): string {
-  const t = p.trim()
-  return t.startsWith('0') ? t.substring(1) : t
+  return p.trim()
 }
 
 export async function bulkInsertEvercallInvested(
