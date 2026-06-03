@@ -359,7 +359,7 @@ export default function ExportPage() {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `飲食_エクスポート_${todayYMD()}.zip`; a.click();
+      a.href = url; a.download = `${listGroup}_エクスポート_${todayYMD()}.zip`; a.click();
       URL.revokeObjectURL(url);
       if (showHistory) fetchHistory(token);
     } catch (e) {
