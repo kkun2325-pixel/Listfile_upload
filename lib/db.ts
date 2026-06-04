@@ -872,6 +872,17 @@ export interface ExportFilters {
   bikou?: string[]
   excludeInvested?: boolean
   investedListGroup?: string  // ZIPエクスポートで選択したリストグループ
+  progressGroup?: string      // 最大進捗フィルター対象グループ
+  progressMin?: number        // 最大進捗 下限（以上）
+  progressMax?: number        // 最大進捗 上限（以下）
+}
+
+const PROGRESS_COLUMN: Record<string, string> = {
+  '全部':      '最大進捗',
+  '飲食SH':    '飲食SH最大進捗',
+  'サイネージ': 'サイネ',
+  'デリバリー': 'デリバリー最大進捗',
+  'ペイメント': 'ペイメント_コール履歴',
 }
 
 function buildFilterWhere(filters: ExportFilters): { where: string; args: unknown[] } {
@@ -908,6 +919,20 @@ function buildFilterWhere(filters: ExportFilters): { where: string; args: unknow
     parts.push(`("席数" ~ '^[0-9]+$' AND CAST("席数" AS INTEGER) <= $${i})`)
     args.push(filters.seatMax)
     i++
+  }
+  if (filters.progressGroup && PROGRESS_COLUMN[filters.progressGroup]) {
+    const col = PROGRESS_COLUMN[filters.progressGroup]
+    const expr = `COALESCE(NULLIF("${col}", ''), '0')::INTEGER`
+    if (filters.progressMin !== undefined && !isNaN(filters.progressMin)) {
+      parts.push(`${expr} >= $${i}`)
+      args.push(filters.progressMin)
+      i++
+    }
+    if (filters.progressMax !== undefined && !isNaN(filters.progressMax)) {
+      parts.push(`${expr} <= $${i}`)
+      args.push(filters.progressMax)
+      i++
+    }
   }
   if (filters.excludeInvested === true) {
     if (filters.investedListGroup) {

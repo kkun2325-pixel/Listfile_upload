@@ -14,6 +14,9 @@ interface ExportFilters {
   seatMax: string;
   bikou: string[];
   excludeInvested: boolean;
+  progressGroup: string;  // 最大進捗フィルター対象グループ（空文字=OFF）
+  progressMin: string;
+  progressMax: string;
 }
 
 interface SeisaListFilters {
@@ -44,7 +47,8 @@ interface HistoryItem {
 interface TeamMember { id: string; name: string }
 interface Team { id: string; name: string; members: TeamMember[] }
 
-const EMPTY_FILTERS: ExportFilters = { genres: [], timeCategories: [], seatMin: "", seatMax: "", bikou: [], excludeInvested: false };
+const EMPTY_FILTERS: ExportFilters = { genres: [], timeCategories: [], seatMin: "", seatMax: "", bikou: [], excludeInvested: false, progressGroup: "", progressMin: "", progressMax: "" };
+const PROGRESS_GROUPS = ["全部", "飲食SH", "サイネージ", "デリバリー", "ペイメント"] as const;
 const EMPTY_SEISA_FILTERS: SeisaListFilters = { timeCategories: [], genres: [], bikou: [], seatMin: "", seatMax: "", seatBlank: false, unassignedOnly: true, excludeName: "", excludeAddress: "" };
 
 // 精査リスト用：(空白) オプション付き選択肢
@@ -228,6 +232,11 @@ export default function ExportPage() {
         sp.set("excludeInvested", "true");
         if (lg) sp.set("listGroup", lg);
       }
+      if (f.progressGroup) {
+        sp.set("progressGroup", f.progressGroup);
+        if (f.progressMin) sp.set("progressMin", f.progressMin);
+        if (f.progressMax) sp.set("progressMax", f.progressMax);
+      }
       const res = await fetch(`/api/export/preview?${sp}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       if (data.success) setPreview(data);
@@ -347,6 +356,9 @@ export default function ExportPage() {
             seatMax: filters.seatMax ? Number(filters.seatMax) : undefined,
             bikou: filters.bikou.length > 0 ? filters.bikou : undefined,
             excludeInvested: filters.excludeInvested || undefined,
+            progressGroup: filters.progressGroup || undefined,
+            progressMin: filters.progressMin ? Number(filters.progressMin) : undefined,
+            progressMax: filters.progressMax ? Number(filters.progressMax) : undefined,
           },
           listGroup, startListNumber: startNum, exportDate: todayYMD(),
         }),
@@ -385,6 +397,9 @@ export default function ExportPage() {
             seatMax: filters.seatMax ? Number(filters.seatMax) : undefined,
             bikou: filters.bikou.length > 0 ? filters.bikou : undefined,
             excludeInvested: filters.excludeInvested || undefined,
+            progressGroup: filters.progressGroup || undefined,
+            progressMin: filters.progressMin ? Number(filters.progressMin) : undefined,
+            progressMax: filters.progressMax ? Number(filters.progressMax) : undefined,
           },
           fileName: `飲食_架電リスト_${today}.csv`,
         }),
@@ -610,6 +625,50 @@ export default function ExportPage() {
               <MultiSelect options={BIKOU_OPTIONS} value={filters.bikou} onChange={(v) => setFilter("bikou", v)} placeholder="すべて（選択なし）" />
             </div>
           </div>
+          {/* 最大進捗フィルター */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <label className="block text-xs font-medium text-gray-500 mb-2">
+              結果ランク（最大進捗）で絞り込む
+              {filters.progressGroup && (
+                <span className="ml-2 text-blue-600 font-normal">
+                  {filters.progressGroup}
+                  {filters.progressMin && ` ${filters.progressMin}以上`}
+                  {filters.progressMax && ` ${filters.progressMax}以下`}
+                </span>
+              )}
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={filters.progressGroup}
+                onChange={(e) => setFilter("progressGroup", e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+              >
+                <option value="">絞り込まない</option>
+                {PROGRESS_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+              {filters.progressGroup && (
+                <>
+                  <input
+                    type="number" min={0} max={10}
+                    value={filters.progressMin}
+                    onChange={(e) => setFilter("progressMin", e.target.value)}
+                    placeholder="0以上"
+                    className="w-24 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+                  />
+                  <span className="text-gray-400 text-sm">〜</span>
+                  <input
+                    type="number" min={0} max={10}
+                    value={filters.progressMax}
+                    onChange={(e) => setFilter("progressMax", e.target.value)}
+                    placeholder="10以下"
+                    className="w-24 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+                  />
+                  <span className="text-xs text-gray-400">（ランク 0〜10）</span>
+                </>
+              )}
+            </div>
+          </div>
+
           <div className="mt-4 pt-4 border-t border-gray-100">
             <label className="flex items-center gap-2.5 cursor-pointer select-none">
               <input type="checkbox" checked={filters.excludeInvested} onChange={(e) => setFilter("excludeInvested", e.target.checked)}

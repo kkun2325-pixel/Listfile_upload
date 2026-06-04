@@ -54,6 +54,12 @@ export async function GET(request: NextRequest) {
       const lg = sp.get("listGroup");
       if (lg) filters.investedListGroup = lg;
     }
+    const pg = sp.get("progressGroup");
+    if (pg) {
+      filters.progressGroup = pg;
+      if (sp.get("progressMin")) filters.progressMin = Number(sp.get("progressMin"));
+      if (sp.get("progressMax")) filters.progressMax = Number(sp.get("progressMax"));
+    }
 
     const [total, timeCategoryCounts] = await Promise.all([
       getFilteredCount(filters),
