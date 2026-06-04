@@ -26,8 +26,8 @@ interface Stats {
   list_rank_distribution: { rank: string; count: number }[];
 }
 
-type TabKey = "飲食SH" | "サイネージ" | "デリバリー" | "ペイメント";
-const TABS: TabKey[] = ["飲食SH", "サイネージ", "デリバリー", "ペイメント"];
+type TabKey = "全体" | "飲食SH" | "サイネージ" | "デリバリー" | "ペイメント";
+const TABS: TabKey[] = ["全体", "飲食SH", "サイネージ", "デリバリー", "ペイメント"];
 
 // 結果ランク カラー（0〜10）
 const RESULT_RANK_COLORS: Record<string, string> = {
@@ -275,19 +275,21 @@ export default function DashboardPage() {
           {/* 投入済 / 未投入 */}
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="bg-blue-50 rounded-lg p-4">
-              <p className="text-xs text-gray-500 mb-1">投入済数</p>
+              <p className="text-xs text-gray-500 mb-1">{activeTab === "全体" ? "架電済数" : "投入済数"}</p>
               <p className="text-2xl font-bold text-blue-600">{group.tokunyu.toLocaleString()}</p>
               <p className="text-xs text-gray-400 mt-1">最大進捗 ≥ 1</p>
             </div>
             <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs text-gray-500 mb-1">未投入数</p>
+              <p className="text-xs text-gray-500 mb-1">{activeTab === "全体" ? "未架電数" : "未投入数"}</p>
               <p className="text-2xl font-bold text-gray-700">{group.mitorunyu.toLocaleString()}</p>
               <p className="text-xs text-gray-400 mt-1">最大進捗 = 0</p>
             </div>
           </div>
 
           {/* 結果ランク棒グラフ */}
-          <p className="text-sm font-semibold text-gray-700 mb-3">結果ランク別件数</p>
+          <p className="text-sm font-semibold text-gray-700 mb-3">
+            {activeTab === "全体" ? "最大進捗ランク別件数（全体）" : "結果ランク別件数"}
+          </p>
           {rankChartData.length > 0 ? (
             <>
               <ResponsiveContainer width="100%" height={220}>

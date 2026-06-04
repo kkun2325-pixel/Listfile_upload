@@ -530,9 +530,9 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
 
   const [
     summaryRes,
-    g1Rank, g2Rank, g3Rank, g4Rank,
+    g0Rank, g1Rank, g2Rank, g3Rank, g4Rank,
     listRankRes,
-    g1Inv, g2Inv, g3Inv, g4Inv,
+    g0Inv, g1Inv, g2Inv, g3Inv, g4Inv,
   ] = await Promise.all([
     sql`
       SELECT
@@ -564,6 +564,7 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
         SUM(CASE WHEN "備考"    IS NULL OR "備考"    = '' THEN 1 ELSE 0 END) AS missing_bikou
       FROM csv_data
     `,
+    sql`SELECT "最大進捗" AS rank_val, COUNT(*) AS cnt FROM csv_data GROUP BY "最大進捗"`,
     sql`SELECT "飲食SH最大進捗"      AS rank_val, COUNT(*) AS cnt FROM csv_data GROUP BY "飲食SH最大進捗"`,
     sql`SELECT "サイネ"               AS rank_val, COUNT(*) AS cnt FROM csv_data GROUP BY "サイネ"`,
     sql`SELECT "デリバリー最大進捗"   AS rank_val, COUNT(*) AS cnt FROM csv_data GROUP BY "デリバリー最大進捗"`,
@@ -573,6 +574,12 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
       FROM csv_data
       WHERE "リストランク" IS NOT NULL AND "リストランク" != ''
       GROUP BY "リストランク"
+    `,
+    sql`
+      SELECT
+        COUNT(CASE WHEN "最大進捗" IS NOT NULL AND "最大進捗" != '' AND "最大進捗" != '0' THEN 1 END) AS tokunyu,
+        COUNT(CASE WHEN "最大進捗" IS NULL     OR  "最大進捗" = ''  OR  "最大進捗" = '0' THEN 1 END) AS mitorunyu
+      FROM csv_data
     `,
     sql`
       SELECT
@@ -605,6 +612,7 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
   ])
 
   const s  = summaryRes[0]  ?? {}
+  const i0 = g0Inv[0]       ?? {}
   const i1 = g1Inv[0]       ?? {}
   const i2 = g2Inv[0]       ?? {}
   const i3 = g3Inv[0]       ?? {}
@@ -624,6 +632,7 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
       bikou:     Number(s.missing_bikou     ?? 0),
     },
     groups: {
+      '全体':      { tokunyu: Number(i0.tokunyu ?? 0), mitorunyu: Number(i0.mitorunyu ?? 0), rank_distribution: processRankRows(g0Rank as Record<string, unknown>[]) },
       '飲食SH':    { tokunyu: Number(i1.tokunyu ?? 0), mitorunyu: Number(i1.mitorunyu ?? 0), rank_distribution: processRankRows(g1Rank as Record<string, unknown>[]) },
       'サイネージ': { tokunyu: Number(i2.tokunyu ?? 0), mitorunyu: Number(i2.mitorunyu ?? 0), rank_distribution: processRankRows(g2Rank as Record<string, unknown>[]) },
       'デリバリー': { tokunyu: Number(i3.tokunyu ?? 0), mitorunyu: Number(i3.mitorunyu ?? 0), rank_distribution: processRankRows(g3Rank as Record<string, unknown>[]) },
