@@ -11,7 +11,7 @@ function coreSuffix(s: string): string {
   return i >= 0 ? t.slice(i + 1).trim() : t
 }
 
-export function getResultRank(callResult: string, status: string): number {
+function getResultRank(callResult: string, status: string): number {
   const result = callResult.trim()
   const statCore = coreSuffix(status)
   const resultCore = coreSuffix(result)
