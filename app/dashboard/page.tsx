@@ -37,6 +37,11 @@ const RESULT_RANK_COLORS: Record<string, string> = {
   "9": "#10b981", "10": "#ef4444",
 };
 
+const LIST_RANK_COLORS: Record<string, string> = {
+  "1": "#dbeafe", "2": "#93c5fd", "3": "#60a5fa",
+  "4": "#3b82f6", "5": "#2563eb", "6": "#1d4ed8", "7": "#1e3a8a",
+};
+
 // ── コンポーネント ────────────────────────────────────────
 
 function StatCard({
@@ -91,12 +96,31 @@ function ResultRankTooltip({
   );
 }
 
+function ListRankTooltip({
+  active, payload, rankLabels,
+}: {
+  active?: boolean;
+  payload?: { payload: { rank: string; count: number } }[];
+  rankLabels: Record<string, string>;
+}) {
+  if (!active || !payload?.length) return null;
+  const { rank, count } = payload[0].payload;
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-md text-xs max-w-[220px]">
+      <p className="font-semibold text-blue-700 mb-0.5">リストランク {rank}</p>
+      <p className="text-gray-500 mb-1 leading-snug">{rankLabels[rank] ?? rank}</p>
+      <p className="font-semibold text-gray-800">{count.toLocaleString()} 件</p>
+    </div>
+  );
+}
+
 // ── メインページ ──────────────────────────────────────────
 
 export default function DashboardPage() {
   const router = useRouter();
   const [stats, setStats]               = useState<Stats | null>(null);
   const [resultRankLabels, setRRL]      = useState<Record<string, string>>({});
+  const [listRankLabels, setLRL]        = useState<Record<string, string>>({});
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState("");
   const [activeTab, setActiveTab]       = useState<TabKey>("飲食SH");
@@ -111,6 +135,7 @@ export default function DashboardPage() {
         if (!data.success) { setError(data.message ?? "エラーが発生しました"); return; }
         setStats(data.stats);
         setRRL(data.result_rank_labels ?? {});
+        setLRL(data.list_rank_labels ?? {});
       })
       .catch(() => setError("データ取得に失敗しました"))
       .finally(() => setLoading(false));
@@ -191,6 +216,40 @@ export default function DashboardPage() {
           <MissingCard label="ジャンル未登録" value={stats.missing.genre}     total={stats.total} />
           <MissingCard label="備考未登録"     value={stats.missing.bikou}     total={stats.total} />
         </div>
+      </div>
+
+      {/* ─── リストランク分布 ─── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+        <p className="text-sm font-semibold text-gray-700 mb-3">リストランク別件数（情報充填度）</p>
+        {stats.list_rank_distribution.length > 0 ? (
+          <>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={stats.list_rank_distribution} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                <XAxis dataKey="rank" tick={{ fontSize: 11 }} tickFormatter={v => `Rank ${v}`} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => Number(v).toLocaleString()} width={56} />
+                <Tooltip content={<ListRankTooltip rankLabels={listRankLabels} />} />
+                <Bar dataKey="count" radius={[3, 3, 0, 0]}>
+                  {stats.list_rank_distribution.map((entry, i) => (
+                    <Cell key={i} fill={LIST_RANK_COLORS[entry.rank] ?? "#3b82f6"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+              {stats.list_rank_distribution.map(({ rank }) => (
+                <span key={rank} className="flex items-center gap-1 text-xs text-gray-500">
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm inline-block shrink-0"
+                    style={{ backgroundColor: LIST_RANK_COLORS[rank] ?? "#3b82f6" }}
+                  />
+                  {rank}: {listRankLabels[rank] ?? rank}
+                </span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="text-gray-400 text-sm text-center py-8">データなし</p>
+        )}
       </div>
 
       {/* ─── リストグループ別集計（タブ） ─── */}
