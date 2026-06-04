@@ -103,6 +103,13 @@ export default function AdminPage() {
   const [ecProgress, setEcProgress] = useState({ current: 0, total: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // ─── コール履歴インポート ──────────────────────────────
+  const [chFile, setChFile]     = useState<File | null>(null);
+  const [chGroup, setChGroup]   = useState<ListGroup>("飲食SH");
+  const [chStatus, setChStatus] = useState<Status>("idle");
+  const [chMsg, setChMsg]       = useState("");
+  const chFileRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
     if (!token) { router.push("/login"); return; }
@@ -146,6 +153,36 @@ export default function AdminPage() {
     } catch (e) {
       setMigrateStatus("error");
       setMigrateMsg(String(e));
+    }
+  }
+
+  async function handleCallHistoryImport() {
+    if (!chFile) { setChMsg("CSVファイルを選択してください"); setChStatus("error"); return; }
+    setChStatus("running");
+    setChMsg("");
+    try {
+      const token = localStorage.getItem("auth_token")!;
+      const form = new FormData();
+      form.append("file", chFile);
+      form.append("listGroup", chGroup);
+      const res = await fetch("/api/admin/import-call-history", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (data.success) {
+        setChStatus("success");
+        setChMsg(data.message ?? "完了");
+        setChFile(null);
+        if (chFileRef.current) chFileRef.current.value = "";
+      } else {
+        setChStatus("error");
+        setChMsg(data.message ?? "インポートに失敗しました");
+      }
+    } catch (e) {
+      setChStatus("error");
+      setChMsg(String(e));
     }
   }
 
@@ -359,6 +396,67 @@ export default function AdminPage() {
               {ecMsg}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ─── コール履歴インポート ────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 className="text-base font-semibold text-gray-900 mb-1">コール履歴インポート</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          飲食店架電リストグループCSVを取り込み、結果ランクをDBに反映します。<br />
+          コール結果・ステータスから自動でランク（0〜10）を判定します。
+        </p>
+        <div className="flex flex-wrap gap-3 mb-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">リストグループ</label>
+            <select
+              value={chGroup}
+              onChange={e => setChGroup(e.target.value as ListGroup)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+            >
+              {LIST_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">CSVファイル</label>
+            <input
+              ref={chFileRef}
+              type="file"
+              accept=".csv"
+              onChange={e => setChFile(e.target.files?.[0] ?? null)}
+              className="block text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-gray-300 file:text-sm file:bg-white file:text-gray-700 hover:file:bg-gray-50"
+            />
+          </div>
+        </div>
+        <button
+          onClick={handleCallHistoryImport}
+          disabled={chStatus === "running" || !chFile}
+          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
+        >
+          {chStatus === "running" ? "処理中..." : "取り込み実行"}
+        </button>
+        {chStatus !== "idle" && chMsg && (
+          <div className={`mt-3 rounded-lg px-4 py-3 text-sm ${alertClass[chStatus]}`}>
+            {chStatus === "success" && <span className="font-semibold mr-1">✓</span>}
+            {chStatus === "error"   && <span className="font-semibold mr-1">✗</span>}
+            {chMsg}
+          </div>
+        )}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <p className="text-xs text-gray-400 font-medium mb-1">ランク判定ルール（コール結果 suffix / ステータス優先）</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs text-gray-500">
+            {[
+              ["受注（ステータス）","9"], ["有効拒否","6"], ["フル拒否","7"],
+              ["決裁者拒否","5"],["AF切","8"],["見込","2"],
+              ["非決","3"],["入口ガチャ","4"],["見込み後・留守・不在・SKIP","1"],
+              ["現アナ・他社・対象外・閉業・本社管理・決裁者不在","10"],
+            ].map(([label, rank]) => (
+              <div key={label} className="flex items-center gap-1">
+                <span className="font-medium text-gray-700 w-4 text-center">{rank}</span>
+                <span>: {label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
