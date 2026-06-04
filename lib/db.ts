@@ -388,27 +388,27 @@ export async function batchUpsertCSVRows(
     await Promise.all(chunk.map(({ row }) =>
       dyn(sql, 
         `UPDATE csv_data SET
-          "時間振り"       = $1,
-          "定休日"         = $2,
-          "席数"           = $3,
-          "ジャンル"       = $4,
-          "備考"           = $5,
-          "架電対象フラグ" = $6,
-          "NG"             = $7,
-          "EC"             = $8,
-          "EC投入済"       = $9,
-          "対象外理由①"   = $10,
-          "対象外理由②"   = $11,
-          "担当者"         = $12,
-          "店舗精査"       = $13,
-          "本社精査"       = $14,
+          "時間振り"       = COALESCE(NULLIF($1,  ''), "時間振り"),
+          "定休日"         = COALESCE(NULLIF($2,  ''), "定休日"),
+          "席数"           = COALESCE(NULLIF($3,  ''), "席数"),
+          "ジャンル"       = COALESCE(NULLIF($4,  ''), "ジャンル"),
+          "備考"           = COALESCE(NULLIF($5,  ''), "備考"),
+          "架電対象フラグ" = COALESCE(NULLIF($6,  ''), "架電対象フラグ"),
+          "NG"             = COALESCE(NULLIF($7,  ''), "NG"),
+          "EC"             = COALESCE(NULLIF($8,  ''), "EC"),
+          "EC投入済"       = COALESCE(NULLIF($9,  ''), "EC投入済"),
+          "対象外理由①"   = COALESCE(NULLIF($10, ''), "対象外理由①"),
+          "対象外理由②"   = COALESCE(NULLIF($11, ''), "対象外理由②"),
+          "担当者"         = COALESCE(NULLIF($12, ''), "担当者"),
+          "店舗精査"       = COALESCE(NULLIF($13, ''), "店舗精査"),
+          "本社精査"       = COALESCE(NULLIF($14, ''), "本社精査"),
           is_duplicate = 1, updated_at = $15, upload_id = $16,
           is_data_changed = CASE WHEN
-            "時間振り" IS DISTINCT FROM $1 OR
-            "定休日"   IS DISTINCT FROM $2 OR
-            "席数"     IS DISTINCT FROM $3 OR
-            "ジャンル" IS DISTINCT FROM $4 OR
-            "備考"     IS DISTINCT FROM $5
+            "時間振り" IS DISTINCT FROM COALESCE(NULLIF($1, ''), "時間振り") OR
+            "定休日"   IS DISTINCT FROM COALESCE(NULLIF($2, ''), "定休日")   OR
+            "席数"     IS DISTINCT FROM COALESCE(NULLIF($3, ''), "席数")     OR
+            "ジャンル" IS DISTINCT FROM COALESCE(NULLIF($4, ''), "ジャンル") OR
+            "備考"     IS DISTINCT FROM COALESCE(NULLIF($5, ''), "備考")
           THEN 1 ELSE 0 END
         WHERE "電話番号" = $17`,
         [
