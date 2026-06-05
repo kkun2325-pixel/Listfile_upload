@@ -1259,6 +1259,159 @@ export async function getTeamMembersByNames(names: string[]) {
   return dyn(sql, `SELECT tm.name, t.name AS team_name FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.name = ANY($1::text[])`, [names])
 }
 
+// ── SharePoint連携ファイル管理 ────────────────────────────────
+
+export async function ensureSharepointFilesTable() {
+  const sql = getDb()
+  await dyn(sql, `
+    CREATE TABLE IF NOT EXISTS sharepoint_files (
+      id                  TEXT PRIMARY KEY,
+      name                TEXT NOT NULL,
+      sharepoint_site_id  TEXT NOT NULL,
+      sharepoint_file_id  TEXT,
+      sharepoint_file_path TEXT,
+      sharepoint_url      TEXT,
+      last_synced_at      TEXT,
+      last_sync_status    TEXT NOT NULL DEFAULT 'never',
+      last_sync_message   TEXT,
+      auto_sync_enabled   INTEGER NOT NULL DEFAULT 1,
+      created_by          TEXT NOT NULL,
+      created_at          TEXT NOT NULL,
+      updated_at          TEXT NOT NULL
+    )
+  `)
+}
+
+export interface SharepointFile {
+  id: string
+  name: string
+  sharepoint_site_id: string
+  sharepoint_file_id: string | null
+  sharepoint_file_path: string | null
+  sharepoint_url: string | null
+  last_synced_at: string | null
+  last_sync_status: 'never' | 'success' | 'error'
+  last_sync_message: string | null
+  auto_sync_enabled: number
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export async function getSharepointFiles(): Promise<SharepointFile[]> {
+  await ensureSharepointFilesTable()
+  const sql = getDb()
+  const rows = await sql`SELECT * FROM sharepoint_files ORDER BY created_at DESC`
+  return rows.map(r => ({
+    id:                   String(r.id),
+    name:                 String(r.name),
+    sharepoint_site_id:   String(r.sharepoint_site_id),
+    sharepoint_file_id:   r.sharepoint_file_id   ? String(r.sharepoint_file_id)   : null,
+    sharepoint_file_path: r.sharepoint_file_path ? String(r.sharepoint_file_path) : null,
+    sharepoint_url:       r.sharepoint_url        ? String(r.sharepoint_url)        : null,
+    last_synced_at:       r.last_synced_at        ? String(r.last_synced_at)        : null,
+    last_sync_status:     (r.last_sync_status ?? 'never') as 'never' | 'success' | 'error',
+    last_sync_message:    r.last_sync_message     ? String(r.last_sync_message)     : null,
+    auto_sync_enabled:    Number(r.auto_sync_enabled ?? 1),
+    created_by:           String(r.created_by),
+    created_at:           String(r.created_at),
+    updated_at:           String(r.updated_at),
+  }))
+}
+
+export async function getSharepointFileById(id: string): Promise<SharepointFile | null> {
+  await ensureSharepointFilesTable()
+  const sql = getDb()
+  const rows = await sql`SELECT * FROM sharepoint_files WHERE id = ${id} LIMIT 1`
+  if (!rows[0]) return null
+  const r = rows[0]
+  return {
+    id:                   String(r.id),
+    name:                 String(r.name),
+    sharepoint_site_id:   String(r.sharepoint_site_id),
+    sharepoint_file_id:   r.sharepoint_file_id   ? String(r.sharepoint_file_id)   : null,
+    sharepoint_file_path: r.sharepoint_file_path ? String(r.sharepoint_file_path) : null,
+    sharepoint_url:       r.sharepoint_url        ? String(r.sharepoint_url)        : null,
+    last_synced_at:       r.last_synced_at        ? String(r.last_synced_at)        : null,
+    last_sync_status:     (r.last_sync_status ?? 'never') as 'never' | 'success' | 'error',
+    last_sync_message:    r.last_sync_message     ? String(r.last_sync_message)     : null,
+    auto_sync_enabled:    Number(r.auto_sync_enabled ?? 1),
+    created_by:           String(r.created_by),
+    created_at:           String(r.created_at),
+    updated_at:           String(r.updated_at),
+  }
+}
+
+export async function createSharepointFile(params: {
+  id: string
+  name: string
+  sharepoint_site_id: string
+  sharepoint_file_id?: string
+  sharepoint_file_path?: string
+  sharepoint_url?: string
+  auto_sync_enabled?: number
+  created_by: string
+}): Promise<void> {
+  await ensureSharepointFilesTable()
+  const sql = getDb()
+  const now = new Date().toISOString()
+  await dyn(sql, `
+    INSERT INTO sharepoint_files
+      (id, name, sharepoint_site_id, sharepoint_file_id, sharepoint_file_path, sharepoint_url, auto_sync_enabled, created_by, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+  `, [
+    params.id,
+    params.name,
+    params.sharepoint_site_id,
+    params.sharepoint_file_id ?? null,
+    params.sharepoint_file_path ?? null,
+    params.sharepoint_url ?? null,
+    params.auto_sync_enabled ?? 1,
+    params.created_by,
+    now,
+  ])
+}
+
+export async function updateSharepointFile(id: string, params: {
+  name?: string
+  sharepoint_site_id?: string
+  sharepoint_file_id?: string
+  sharepoint_file_path?: string
+  sharepoint_url?: string
+  auto_sync_enabled?: number
+}): Promise<void> {
+  const sql = getDb()
+  const now = new Date().toISOString()
+  const sets: string[] = ['updated_at = $1']
+  const args: unknown[] = [now]
+  let i = 2
+
+  if (params.name !== undefined)                { sets.push(`name = $${i++}`);                 args.push(params.name) }
+  if (params.sharepoint_site_id !== undefined)  { sets.push(`sharepoint_site_id = $${i++}`);  args.push(params.sharepoint_site_id) }
+  if (params.sharepoint_file_id !== undefined)  { sets.push(`sharepoint_file_id = $${i++}`);  args.push(params.sharepoint_file_id || null) }
+  if (params.sharepoint_file_path !== undefined){ sets.push(`sharepoint_file_path = $${i++}`);args.push(params.sharepoint_file_path || null) }
+  if (params.sharepoint_url !== undefined)      { sets.push(`sharepoint_url = $${i++}`);       args.push(params.sharepoint_url || null) }
+  if (params.auto_sync_enabled !== undefined)   { sets.push(`auto_sync_enabled = $${i++}`);   args.push(params.auto_sync_enabled) }
+
+  args.push(id)
+  await dyn(sql, `UPDATE sharepoint_files SET ${sets.join(', ')} WHERE id = $${i}`, args)
+}
+
+export async function updateSharepointFileSyncResult(id: string, status: 'success' | 'error', message?: string): Promise<void> {
+  const sql = getDb()
+  const now = new Date().toISOString()
+  await dyn(sql, `
+    UPDATE sharepoint_files
+    SET last_synced_at = $1, last_sync_status = $2, last_sync_message = $3, updated_at = $1
+    WHERE id = $4
+  `, [now, status, message ?? null, id])
+}
+
+export async function deleteSharepointFile(id: string): Promise<void> {
+  const sql = getDb()
+  await sql`DELETE FROM sharepoint_files WHERE id = ${id}`
+}
+
 export async function seedInitialTeams() {
   await ensureTeamTables()
   const sql = getDb()

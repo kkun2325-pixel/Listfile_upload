@@ -51,6 +51,11 @@ const ProductivityIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
   </svg>
 );
+const SharepointIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-4 h-4 shrink-0">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0112 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c-.621 0-1.125.504-1.125 1.125v1.5m2.25-2.625h7.5m-7.5 0A1.125 1.125 0 0110.875 12v1.5m0 0c0 .621.504 1.125 1.125 1.125m0 0h7.5" />
+  </svg>
+);
 
 const menuItems: MenuItem[] = [
   { label: "TOP",           href: "/dashboard/top",          icon: <HomeIcon />,           exact: true },
@@ -60,6 +65,7 @@ const menuItems: MenuItem[] = [
   { label: "店舗検索",       href: "/dashboard/store",        icon: <SearchIcon /> },
   { label: "レポート",       href: "/dashboard/productivity", icon: <ProductivityIcon /> },
   { label: "履歴",           href: "/dashboard/history",      icon: <HistoryIcon /> },
+  { label: "SharePoint連携", href: "/dashboard/sharepoint",   icon: <SharepointIcon /> },
   { label: "管理",           href: "/dashboard/admin",        icon: <AdminIcon /> },
 ];
 
