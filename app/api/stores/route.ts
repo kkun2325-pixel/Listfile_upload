@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db";
 const PAGE_SIZE = 50;
 
 // ソート可能カラムのホワイトリスト（SQLインジェクション防止）
-const SORT_COLS = new Set(["名前", "電話番号", "住所1", "住所2", "時間振り", "定休日", "席数", "ジャンル", "備考", "担当者"]);
+const SORT_COLS = new Set(["名前", "電話番号", "住所1", "住所2", "時間振り", "定休日", "席数", "ジャンル", "備考", "担当者", "リストランク", "店舗精査", "本社精査", "最大進捗"]);
 
 export async function GET(req: NextRequest) {
   const token = extractToken(req.headers.get("authorization"));
@@ -44,7 +44,8 @@ export async function GET(req: NextRequest) {
       sql.query(`SELECT COUNT(*) AS total FROM csv_data ${where}`, args),
       sql.query(
         `SELECT id, "名前", "電話番号", "住所1", "住所2",
-                "時間振り", "定休日", "席数", "ジャンル", "備考", "担当者"
+                "時間振り", "定休日", "席数", "ジャンル", "備考", "担当者",
+                "リストランク", "店舗精査", "本社精査", "最大進捗"
          FROM csv_data
          ${where}
          ORDER BY "${sortBy}" ${sortDir} NULLS LAST
