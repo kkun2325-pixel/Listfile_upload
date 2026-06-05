@@ -650,6 +650,169 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
   }
 }
 
+// ── 架電記録（call_records）────────────────────────────────────
+
+export async function ensureCallRecordsTable() {
+  const sql = getDb()
+  await dyn(sql, `
+    CREATE TABLE IF NOT EXISTS call_records (
+      id            TEXT PRIMARY KEY,
+      phone_number  TEXT NOT NULL,
+      list_group    TEXT NOT NULL,
+      call_datetime TEXT,
+      day_of_week   INTEGER,
+      hour          INTEGER,
+      call_result   TEXT,
+      status        TEXT NOT NULL DEFAULT '',
+      agent         TEXT,
+      result_rank   INTEGER NOT NULL DEFAULT 0,
+      created_at    TEXT NOT NULL
+    )
+  `)
+  await dyn(sql, `CREATE INDEX IF NOT EXISTS idx_call_records_phone  ON call_records(phone_number)`)
+  await dyn(sql, `CREATE INDEX IF NOT EXISTS idx_call_records_rank   ON call_records(result_rank)`)
+  await dyn(sql, `CREATE INDEX IF NOT EXISTS idx_call_records_group  ON call_records(list_group)`)
+}
+
+export interface CallRecord {
+  phone_number: string
+  list_group:   string
+  call_datetime?: string
+  day_of_week?: number
+  hour?: number
+  call_result?: string
+  status?: string
+  agent?: string
+  result_rank: number
+}
+
+export async function bulkInsertCallRecords(records: CallRecord[]): Promise<number> {
+  if (records.length === 0) return 0
+  await ensureCallRecordsTable()
+  const sql = getDb()
+  const now = new Date().toISOString()
+  const CHUNK = 500
+  let inserted = 0
+  for (let i = 0; i < records.length; i += CHUNK) {
+    const chunk = records.slice(i, i + CHUNK)
+    const vals  = chunk.map((_, j) =>
+      `($${j*11+1},$${j*11+2},$${j*11+3},$${j*11+4},$${j*11+5},$${j*11+6},$${j*11+7},$${j*11+8},$${j*11+9},$${j*11+10},$${j*11+11})`
+    ).join(',')
+    const args = chunk.flatMap(r => [
+      crypto.randomUUID(), r.phone_number, r.list_group,
+      r.call_datetime ?? null, r.day_of_week ?? null, r.hour ?? null,
+      r.call_result ?? null, r.status ?? '', r.agent ?? null,
+      r.result_rank, now
+    ])
+    await dyn(sql, `
+      INSERT INTO call_records
+        (id,phone_number,list_group,call_datetime,day_of_week,hour,call_result,status,agent,result_rank,created_at)
+      VALUES ${vals}
+      ON CONFLICT DO NOTHING
+    `, [...args])
+    // ON CONFLICT DO NOTHING は id 重複時のみ。重複排除は呼び出し側で行う
+    inserted += chunk.length
+  }
+  return inserted
+}
+
+// 電話番号別集計
+export async function getCallAnalysisList(opts: {
+  q?: string; page?: number; pageSize?: number
+  sortBy?: string; sortDir?: 'asc' | 'desc'
+}): Promise<{ rows: Record<string, unknown>[]; total: number }> {
+  await ensureCallRecordsTable()
+  const sql = getDb()
+  const { q = '', page = 1, pageSize = 50, sortBy = 'total_calls', sortDir = 'desc' } = opts
+
+  const SAFE_SORT = new Set(['total_calls','answered_calls','answered_rate','decision_calls','decision_rate'])
+  const orderCol = SAFE_SORT.has(sortBy) ? sortBy : 'total_calls'
+  const orderDir = sortDir === 'asc' ? 'ASC' : 'DESC'
+
+  const args: unknown[] = []
+  let idx = 1
+  const conditions: string[] = []
+  if (q) {
+    conditions.push(`(cr.phone_number ILIKE $${idx} OR cd."名前" ILIKE $${idx})`)
+    args.push(`%${q}%`); idx++
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+
+  const [countRes, rows] = await Promise.all([
+    dyn(sql, `
+      SELECT COUNT(DISTINCT cr.phone_number) AS total
+      FROM call_records cr
+      LEFT JOIN csv_data cd ON cd."電話番号" = cr.phone_number
+      ${where}
+    `, args),
+    dyn(sql, `
+      SELECT
+        cr.phone_number,
+        MAX(cd."名前") AS store_name,
+        COUNT(*)                                                     AS total_calls,
+        COUNT(CASE WHEN cr.result_rank >= 2 THEN 1 END)             AS answered_calls,
+        ROUND(COUNT(CASE WHEN cr.result_rank >= 2 THEN 1 END)::numeric
+              / NULLIF(COUNT(*),0) * 100, 1)                        AS answered_rate,
+        COUNT(CASE WHEN cr.result_rank >= 5 AND cr.result_rank < 10 THEN 1 END) AS decision_calls,
+        ROUND(COUNT(CASE WHEN cr.result_rank >= 5 AND cr.result_rank < 10 THEN 1 END)::numeric
+              / NULLIF(COUNT(*),0) * 100, 1)                        AS decision_rate,
+        MAX(cr.call_datetime)                                        AS last_call
+      FROM call_records cr
+      LEFT JOIN csv_data cd ON cd."電話番号" = cr.phone_number
+      ${where}
+      GROUP BY cr.phone_number
+      ORDER BY ${orderCol} ${orderDir} NULLS LAST
+      LIMIT $${idx} OFFSET $${idx+1}
+    `, [...args, pageSize, (page - 1) * pageSize]),
+  ])
+
+  return { rows, total: Number(countRes[0]?.total ?? 0) }
+}
+
+// 電話番号1件の詳細
+export async function getCallAnalysisDetail(phoneNumber: string): Promise<{
+  stats: Record<string, unknown>
+  day_answer:   { day: number; count: number }[]
+  hour_answer:  { hour: number; count: number }[]
+  day_decision: { day: number; count: number }[]
+  history:      Record<string, unknown>[]
+}> {
+  await ensureCallRecordsTable()
+  const sql = getDb()
+  const [statsRes, dayAns, hourAns, dayDec, history] = await Promise.all([
+    dyn(sql, `
+      SELECT
+        COUNT(*)                                                     AS total_calls,
+        COUNT(CASE WHEN result_rank >= 2 THEN 1 END)                AS answered_calls,
+        ROUND(COUNT(CASE WHEN result_rank >= 2 THEN 1 END)::numeric
+              / NULLIF(COUNT(*),0)*100,1)                           AS answered_rate,
+        COUNT(CASE WHEN result_rank >= 5 AND result_rank < 10 THEN 1 END) AS decision_calls,
+        ROUND(COUNT(CASE WHEN result_rank >= 5 AND result_rank < 10 THEN 1 END)::numeric
+              / NULLIF(COUNT(*),0)*100,1)                           AS decision_rate
+      FROM call_records WHERE phone_number = $1
+    `, [phoneNumber]),
+    dyn(sql, `SELECT day_of_week AS day, COUNT(*) AS count FROM call_records
+              WHERE phone_number=$1 AND result_rank>=2 AND day_of_week IS NOT NULL
+              GROUP BY day_of_week ORDER BY day_of_week`, [phoneNumber]),
+    dyn(sql, `SELECT hour, COUNT(*) AS count FROM call_records
+              WHERE phone_number=$1 AND result_rank>=2 AND hour IS NOT NULL
+              GROUP BY hour ORDER BY hour`, [phoneNumber]),
+    dyn(sql, `SELECT day_of_week AS day, COUNT(*) AS count FROM call_records
+              WHERE phone_number=$1 AND result_rank>=5 AND result_rank<10 AND day_of_week IS NOT NULL
+              GROUP BY day_of_week ORDER BY day_of_week`, [phoneNumber]),
+    dyn(sql, `SELECT call_datetime,call_result,status,agent,list_group,result_rank
+              FROM call_records WHERE phone_number=$1
+              ORDER BY call_datetime DESC LIMIT 100`, [phoneNumber]),
+  ])
+  return {
+    stats:        statsRes[0] ?? {},
+    day_answer:   dayAns   as { day: number; count: number }[],
+    hour_answer:  hourAns  as { hour: number; count: number }[],
+    day_decision: dayDec   as { day: number; count: number }[],
+    history,
+  }
+}
+
 // ── リストランク スナップショット ─────────────────────────────
 
 export async function ensureRankSnapshotTable() {
