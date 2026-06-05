@@ -644,6 +644,68 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
   }
 }
 
+// ── リストランク スナップショット ─────────────────────────────
+
+export async function ensureRankSnapshotTable() {
+  const sql = getDb()
+  await dyn(sql, `
+    CREATE TABLE IF NOT EXISTS rank_snapshots (
+      id TEXT PRIMARY KEY,
+      snapshot_date TEXT NOT NULL,
+      rank TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `)
+  await dyn(sql, `CREATE INDEX IF NOT EXISTS idx_rank_snapshots_date ON rank_snapshots(snapshot_date)`)
+}
+
+export async function takeRankSnapshot(): Promise<{ date: string; ranks: number }> {
+  await ensureRankSnapshotTable()
+  const sql = getDb()
+  const today = new Date().toISOString().slice(0, 10)
+
+  // 当日分を上書き（再実行可能）
+  await dyn(sql, `DELETE FROM rank_snapshots WHERE snapshot_date = $1`, [today])
+
+  const rows = await sql`
+    SELECT "リストランク" AS rank, COUNT(*) AS cnt
+    FROM csv_data
+    WHERE "リストランク" IS NOT NULL AND "リストランク" != ''
+    GROUP BY "リストランク"
+  `
+  const now = new Date().toISOString()
+  for (const row of rows) {
+    await dyn(sql, `
+      INSERT INTO rank_snapshots (id, snapshot_date, rank, count, created_at)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [crypto.randomUUID(), today, String(row.rank), Number(row.cnt), now])
+  }
+  return { date: today, ranks: rows.length }
+}
+
+export async function getRankHistory(): Promise<{ date: string; [rank: string]: number | string }[]> {
+  try {
+    await ensureRankSnapshotTable()
+    const sql = getDb()
+    const rows = await sql`
+      SELECT snapshot_date, rank, count
+      FROM rank_snapshots
+      ORDER BY snapshot_date ASC, rank ASC
+    `
+    const byDate: Record<string, Record<string, number>> = {}
+    for (const row of rows) {
+      const d = String(row.snapshot_date)
+      const r = String(row.rank)
+      if (!byDate[d]) byDate[d] = {}
+      byDate[d][r] = Number(row.count)
+    }
+    return Object.entries(byDate)
+      .map(([date, ranks]) => ({ date, ...ranks }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  } catch { return [] }
+}
+
 // ── ダッシュボード統計（旧版・後方互換） ─────────────────────
 
 export async function getDashboardStatsAll() {

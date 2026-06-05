@@ -15,8 +15,9 @@ interface SeisaFilters {
   seatMax?: number;
   seatBlank?: boolean;
   unassignedOnly?: boolean;
-  excludeNameKeywords?: string[];    // 店名除外キーワード（複数可）
-  excludeAddressKeywords?: string[]; // 住所除外キーワード（複数可）
+  excludeNameKeywords?: string[];
+  excludeAddressKeywords?: string[];
+  listRanks?: string[];  // リストランク絞り込み（例: ['1'] = ランク1のみ）
 }
 
 function buildWhere(f: SeisaFilters): { where: string; args: unknown[] } {
@@ -74,6 +75,11 @@ function buildWhere(f: SeisaFilters): { where: string; args: unknown[] } {
     parts.push(`NOT (${excludeConds.join(" OR ")})`);
   }
 
+  if (f.listRanks && f.listRanks.length > 0) {
+    parts.push(`"リストランク" = ANY($${i}::text[])`);
+    args.push(f.listRanks); i++;
+  }
+
   return { where: parts.length > 0 ? "WHERE " + parts.join(" AND ") : "", args };
 }
 
@@ -108,6 +114,7 @@ export async function GET(req: NextRequest) {
     unassignedOnly: sp.get("unassignedOnly") !== "false",
     excludeNameKeywords:    sp.get("excludeName")?.split(",").map(s => s.trim()).filter(Boolean),
     excludeAddressKeywords: sp.get("excludeAddress")?.split(",").map(s => s.trim()).filter(Boolean),
+    listRanks: sp.getAll("listRanks").filter(Boolean),
   };
 
   try {

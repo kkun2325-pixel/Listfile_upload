@@ -110,6 +110,23 @@ export default function AdminPage() {
   const [chMsg, setChMsg]       = useState("");
   const chFileRef = useRef<HTMLInputElement>(null);
 
+  // ─── ランクスナップショット ────────────────────────────
+  const [snapStatus, setSnapStatus] = useState<Status>("idle");
+  const [snapMsg, setSnapMsg]       = useState("");
+
+  async function handleSnapshot() {
+    setSnapStatus("running"); setSnapMsg("");
+    try {
+      const token = localStorage.getItem("auth_token")!;
+      const res = await fetch("/api/admin/snapshot", {
+        method: "POST", headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) { setSnapStatus("success"); setSnapMsg(data.message ?? "完了"); }
+      else              { setSnapStatus("error");   setSnapMsg(data.message ?? "エラー"); }
+    } catch (e) { setSnapStatus("error"); setSnapMsg(String(e)); }
+  }
+
   // ─── アクティブセクション ──────────────────────────────
   const [activeSection, setActiveSection] = useState<string | null>(null);
   function toggleSection(id: string) { setActiveSection(prev => prev === id ? null : id); }
@@ -297,6 +314,11 @@ export default function AdminPage() {
       bg: "bg-slate-50", border: "border-slate-200", iconBg: "bg-slate-100", iconColor: "text-slate-600",
       icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 2.625c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" /></svg>,
     },
+    {
+      id: "snapshot", title: "ランク記録", desc: "今日のリストランク分布をグラフ用に保存する",
+      bg: "bg-teal-50", border: "border-teal-200", iconBg: "bg-teal-100", iconColor: "text-teal-600",
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>,
+    },
   ] as const;
 
   return (
@@ -459,6 +481,26 @@ export default function AdminPage() {
         {activeSection === "team"         && <TeamManagementSection />}
         {activeSection === "clean-rows"   && <CleanEmptyRowsSection />}
         {activeSection === "clean-phones" && <CleanInvalidPhonesSection />}
+
+        {/* ランク記録（スナップショット） */}
+        {activeSection === "snapshot" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-1">ランク記録（スナップショット）</h2>
+            <p className="text-sm text-gray-500 mb-5">
+              今日時点のリストランク分布をDBに保存します。<br />
+              ダッシュボードの「ランク推移グラフ」に反映されます。週1回程度の実行を推奨します。
+            </p>
+            <button onClick={handleSnapshot} disabled={snapStatus === "running"}
+              className="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 disabled:opacity-40 transition-colors">
+              {snapStatus === "running" ? "保存中..." : "今日のランクを記録する"}
+            </button>
+            {snapStatus !== "idle" && snapMsg && (
+              <div className={`mt-3 rounded-lg px-4 py-3 text-sm ${alertClass[snapStatus]}`}>
+                {snapStatus === "success" && "✓ "}{snapStatus === "error" && "✗ "}{snapMsg}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* DBスキーマ移行 */}
         {activeSection === "db-migrate" && (

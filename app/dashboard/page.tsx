@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  LineChart, Line, Legend,
 } from "recharts";
 
 // ── 型定義 ────────────────────────────────────────────────
@@ -124,6 +125,8 @@ export default function DashboardPage() {
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState("");
   const [activeTab, setActiveTab]       = useState<TabKey>("飲食SH");
+  const [rankHistory, setRankHistory]   = useState<Record<string, string | number>[]>([]);
+  const [rank1Exporting, setRank1Exporting] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
@@ -139,7 +142,34 @@ export default function DashboardPage() {
       })
       .catch(() => setError("データ取得に失敗しました"))
       .finally(() => setLoading(false));
+
+    // ランク推移履歴を取得
+    fetch("/api/admin/snapshot", { headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` } })
+      .then(r => r.json())
+      .then(data => { if (data.success) setRankHistory(data.history ?? []); })
+      .catch(() => {});
   }, [router]);
+
+  async function handleRank1Export() {
+    const token = localStorage.getItem("auth_token");
+    if (!token) return;
+    setRank1Exporting(true);
+    try {
+      const res = await fetch("/api/export/seisa-list", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ filters: { listRanks: ["1"], unassignedOnly: false }, assignMode: "none" }),
+      });
+      if (!res.ok) { const e = await res.json(); alert(e.message ?? "エラー"); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `精査リスト_ランク1_${new Date().toISOString().slice(0,10).replace(/-/g,"")}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally { setRank1Exporting(false); }
+  }
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-64">
@@ -249,6 +279,49 @@ export default function DashboardPage() {
           </>
         ) : (
           <p className="text-gray-400 text-sm text-center py-8">データなし</p>
+        )}
+      </div>
+
+      {/* ─── ランク推移グラフ ＋ ランク1クイック出力 ─── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-700">リストランク推移（週次）</p>
+            <p className="text-xs text-gray-400 mt-0.5">管理画面「ランク記録」で定期的にスナップショットを保存すると反映されます</p>
+          </div>
+          <button
+            onClick={handleRank1Export}
+            disabled={rank1Exporting}
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors shrink-0"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            {rank1Exporting ? "出力中..." : "ランク1を精査リストに出す"}
+          </button>
+        </div>
+
+        {rankHistory.length >= 2 ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={rankHistory} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={v => v.slice(5)} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={v => Number(v).toLocaleString()} width={56} />
+              <Tooltip formatter={(v, name) => [`${Number(v).toLocaleString()}件`, `ランク${name}`]} labelFormatter={l => `📅 ${l}`} />
+              <Legend formatter={name => `ランク${name}`} />
+              {["1","2","3","4","5","6","7"].map((rank) => (
+                <Line key={rank} type="monotone" dataKey={rank} dot={false} strokeWidth={2}
+                  stroke={LIST_RANK_COLORS[rank] ?? "#3b82f6"} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-10 h-10 text-gray-300 mb-3">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+            </svg>
+            <p className="text-sm text-gray-500">スナップショットが2件以上たまると<br />推移グラフが表示されます</p>
+            <p className="text-xs text-gray-400 mt-1">管理画面 → ランク記録 から記録してください</p>
+          </div>
         )}
       </div>
 
