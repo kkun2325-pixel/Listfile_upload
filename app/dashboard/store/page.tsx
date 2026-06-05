@@ -50,6 +50,34 @@ const COLS: {
 
 const val = (s: Store, k: SortCol) => s[k] ?? "";
 
+// ─── セル編集UI（コンポーネント外で定義してre-mountを防ぐ） ──
+function EditCell({
+  col, value, onChange,
+}: {
+  col: typeof COLS[number];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const cls = "w-full border border-blue-400 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white";
+  if (col.editable === "readonly") return <span className="text-xs text-gray-400 px-1">{value || "—"}</span>;
+  if (col.editable === "select" && col.opts) {
+    return (
+      <select value={value} onChange={e => onChange(e.target.value)} className={cls}>
+        <option value="">―</option>
+        {col.opts.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    );
+  }
+  return (
+    <input
+      type={col.editable === "number" ? "number" : "text"}
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className={cls}
+    />
+  );
+}
+
 // リストランク色
 const RANK_COLOR: Record<string, string> = {
   "1": "bg-gray-100 text-gray-500",
@@ -146,25 +174,6 @@ export default function StorePage() {
     finally { setSaving(false); }
   }
 
-  // ─── セル編集UI ──────────────────────────────────────
-  function EditCell({ col }: { col: typeof COLS[number] }) {
-    const v = editValues[col.key] ?? "";
-    const cls = "w-full border border-blue-400 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white";
-    if (col.editable === "readonly") return <span className="text-xs text-gray-400 px-1">{v || "—"}</span>;
-    if (col.editable === "select" && col.opts) {
-      return (
-        <select value={v} onChange={e => setEditValues(p => ({ ...p, [col.key]: e.target.value }))} className={cls}>
-          <option value="">―</option>
-          {col.opts.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
-      );
-    }
-    return (
-      <input type={col.editable === "number" ? "number" : "text"} value={v}
-        onChange={e => setEditValues(p => ({ ...p, [col.key]: e.target.value }))} className={cls} />
-    );
-  }
-
   const pageStart = (page - 1) * 50;
 
   return (
@@ -249,7 +258,11 @@ export default function StorePage() {
                         <>
                           {COLS.map(c => (
                             <td key={c.key} className="border border-blue-300 px-1.5 py-1">
-                              <EditCell col={c} />
+                              <EditCell
+                                col={c}
+                                value={editValues[c.key] ?? ""}
+                                onChange={v => setEditValues(p => ({ ...p, [c.key]: v }))}
+                              />
                             </td>
                           ))}
                           <td className="border border-gray-200 px-1.5 py-1">
