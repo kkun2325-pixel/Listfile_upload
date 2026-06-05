@@ -937,6 +937,7 @@ export interface ExportFilters {
   progressGroup?: string      // 最大進捗フィルター対象グループ
   progressMin?: number        // 最大進捗 下限（以上）
   progressMax?: number        // 最大進捗 上限（以下）
+  addressFilter?: 'filled' | 'blank' | 'all'  // 住所フィルター（default: filled）
 }
 
 const PROGRESS_COLUMN: Record<string, string> = {
@@ -952,10 +953,16 @@ function buildFilterWhere(filters: ExportFilters): { where: string; args: unknow
   const args: unknown[] = []
   let i = 1
 
-  // 架電可能な行のみ対象（電話番号・名前・住所2が必須）
+  // 電話番号・名前は必須
   parts.push(`"電話番号" IS NOT NULL AND "電話番号" != '' AND "電話番号" NOT LIKE '#%'`)
   parts.push(`"名前"  IS NOT NULL AND "名前"  != ''`)
-  parts.push(`"住所2" IS NOT NULL AND "住所2" != ''`)
+  // 住所フィルター
+  const addrFilter = filters.addressFilter ?? 'filled'
+  if (addrFilter === 'filled') {
+    parts.push(`"住所2" IS NOT NULL AND "住所2" != ''`)
+  } else if (addrFilter === 'blank') {
+    parts.push(`("住所2" IS NULL OR "住所2" = '')`)
+  }
 
   if (filters.genres && filters.genres.length > 0) {
     parts.push(`"ジャンル" = ANY($${i}::text[])`)

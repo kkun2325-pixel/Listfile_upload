@@ -17,7 +17,8 @@ interface SeisaFilters {
   unassignedOnly?: boolean;
   excludeNameKeywords?: string[];
   excludeAddressKeywords?: string[];
-  listRanks?: string[];  // リストランク絞り込み（例: ['1'] = ランク1のみ）
+  listRanks?: string[];
+  addressFilter?: 'filled' | 'blank' | 'all';  // 住所フィルター
 }
 
 function buildWhere(f: SeisaFilters): { where: string; args: unknown[] } {
@@ -80,6 +81,13 @@ function buildWhere(f: SeisaFilters): { where: string; args: unknown[] } {
     args.push(f.listRanks); i++;
   }
 
+  const addrFilter = f.addressFilter ?? 'all';
+  if (addrFilter === 'filled') {
+    parts.push(`"住所2" IS NOT NULL AND "住所2" != ''`);
+  } else if (addrFilter === 'blank') {
+    parts.push(`("住所2" IS NULL OR "住所2" = '')`);
+  }
+
   return { where: parts.length > 0 ? "WHERE " + parts.join(" AND ") : "", args };
 }
 
@@ -115,6 +123,7 @@ export async function GET(req: NextRequest) {
     excludeNameKeywords:    sp.get("excludeName")?.split(",").map(s => s.trim()).filter(Boolean),
     excludeAddressKeywords: sp.get("excludeAddress")?.split(",").map(s => s.trim()).filter(Boolean),
     listRanks: sp.getAll("listRanks").filter(Boolean),
+    addressFilter: (sp.get("addressFilter") as 'filled' | 'blank' | 'all') || undefined,
   };
 
   try {

@@ -60,6 +60,8 @@ export async function GET(request: NextRequest) {
       if (sp.get("progressMin")) filters.progressMin = Number(sp.get("progressMin"));
       if (sp.get("progressMax")) filters.progressMax = Number(sp.get("progressMax"));
     }
+    const af = sp.get("addressFilter");
+    if (af === 'filled' || af === 'blank' || af === 'all') filters.addressFilter = af;
 
     const [total, timeCategoryCounts] = await Promise.all([
       getFilteredCount(filters),

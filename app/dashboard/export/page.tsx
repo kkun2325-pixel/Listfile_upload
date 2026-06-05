@@ -14,9 +14,10 @@ interface ExportFilters {
   seatMax: string;
   bikou: string[];
   excludeInvested: boolean;
-  progressGroup: string;  // 最大進捗フィルター対象グループ（空文字=OFF）
+  progressGroup: string;
   progressMin: string;
   progressMax: string;
+  addressFilter: 'filled' | 'blank' | 'all';
 }
 
 interface SeisaListFilters {
@@ -27,8 +28,9 @@ interface SeisaListFilters {
   seatMax: string;
   seatBlank: boolean;
   unassignedOnly: boolean;
-  excludeName: string;    // 店名除外キーワード（カンマ区切り複数可）
-  excludeAddress: string; // 住所除外キーワード（カンマ区切り複数可）
+  excludeName: string;
+  excludeAddress: string;
+  addressFilter: 'filled' | 'blank' | 'all';
 }
 
 interface BatchMember { name: string; count: number; type?: "member" | "team" }
@@ -47,9 +49,9 @@ interface HistoryItem {
 interface TeamMember { id: string; name: string }
 interface Team { id: string; name: string; members: TeamMember[] }
 
-const EMPTY_FILTERS: ExportFilters = { genres: [], timeCategories: [], seatMin: "", seatMax: "", bikou: [], excludeInvested: false, progressGroup: "", progressMin: "", progressMax: "" };
+const EMPTY_FILTERS: ExportFilters = { genres: [], timeCategories: [], seatMin: "", seatMax: "", bikou: [], excludeInvested: false, progressGroup: "", progressMin: "", progressMax: "", addressFilter: "filled" };
 const PROGRESS_GROUPS = ["全部", "飲食SH", "サイネージ", "デリバリー", "ペイメント"] as const;
-const EMPTY_SEISA_FILTERS: SeisaListFilters = { timeCategories: [], genres: [], bikou: [], seatMin: "", seatMax: "", seatBlank: false, unassignedOnly: true, excludeName: "", excludeAddress: "" };
+const EMPTY_SEISA_FILTERS: SeisaListFilters = { timeCategories: [], genres: [], bikou: [], seatMin: "", seatMax: "", seatBlank: false, unassignedOnly: true, excludeName: "", excludeAddress: "", addressFilter: "all" };
 
 // 精査リスト用：(空白) オプション付き選択肢
 const SEISA_TIME_OPTIONS  = ["(空白)", ...TIME_CATEGORIES];
@@ -237,6 +239,7 @@ export default function ExportPage() {
         if (f.progressMin) sp.set("progressMin", f.progressMin);
         if (f.progressMax) sp.set("progressMax", f.progressMax);
       }
+      if (f.addressFilter && f.addressFilter !== 'filled') sp.set("addressFilter", f.addressFilter);
       const res = await fetch(`/api/export/preview?${sp}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       if (data.success) setPreview(data);
@@ -257,6 +260,7 @@ export default function ExportPage() {
       if (!f.unassignedOnly) sp.set("unassignedOnly", "false");
       if (f.excludeName.trim())    sp.set("excludeName",    f.excludeName.trim());
       if (f.excludeAddress.trim()) sp.set("excludeAddress", f.excludeAddress.trim());
+      if (f.addressFilter && f.addressFilter !== 'all') sp.set("addressFilter", f.addressFilter);
       const res = await fetch(`/api/export/seisa-list?${sp}`, { headers: { Authorization: `Bearer ${token}` } });
       const d = await res.json();
       if (d.success) setSeisaTotal(d.total);
@@ -359,6 +363,7 @@ export default function ExportPage() {
             progressGroup: filters.progressGroup || undefined,
             progressMin: filters.progressMin ? Number(filters.progressMin) : undefined,
             progressMax: filters.progressMax ? Number(filters.progressMax) : undefined,
+            addressFilter: filters.addressFilter !== 'filled' ? filters.addressFilter : undefined,
           },
           listGroup, startListNumber: startNum, exportDate: todayYMD(),
         }),
@@ -400,6 +405,7 @@ export default function ExportPage() {
             progressGroup: filters.progressGroup || undefined,
             progressMin: filters.progressMin ? Number(filters.progressMin) : undefined,
             progressMax: filters.progressMax ? Number(filters.progressMax) : undefined,
+            addressFilter: filters.addressFilter !== 'filled' ? filters.addressFilter : undefined,
           },
           fileName: `飲食_架電リスト_${today}.csv`,
         }),
@@ -447,6 +453,7 @@ export default function ExportPage() {
             excludeAddressKeywords: seisaFilters.excludeAddress.trim()
               ? seisaFilters.excludeAddress.split(",").map(s => s.trim()).filter(Boolean)
               : undefined,
+            addressFilter: seisaFilters.addressFilter !== 'all' ? seisaFilters.addressFilter : undefined,
           },
           assignMode: useAutoFill ? assignMode : "none",
           // 個人アサイン
@@ -666,6 +673,26 @@ export default function ExportPage() {
                   <span className="text-xs text-gray-400">（ランク 0〜10）</span>
                 </>
               )}
+            </div>
+          </div>
+
+          {/* 住所フィルター */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <label className="block text-xs font-medium text-gray-500 mb-2">住所（住所2）</label>
+            <div className="flex gap-4">
+              {([['filled','入力済のみ'],['blank','空欄のみ'],['all','指定なし（全件）']] as const).map(([val, label]) => (
+                <label key={val} className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="radio"
+                    name="addressFilter"
+                    value={val}
+                    checked={filters.addressFilter === val}
+                    onChange={() => setFilter("addressFilter", val)}
+                    className="w-3.5 h-3.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span className="text-sm text-gray-700">{label}</span>
+                </label>
+              ))}
             </div>
           </div>
 
@@ -990,6 +1017,21 @@ export default function ExportPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
                 />
                 <p className="text-xs text-gray-400 mt-1">住所1・住所2 いずれかにキーワードを含む場合に除外します</p>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <label className="block text-xs font-medium text-gray-500 mb-2">住所（住所2）</label>
+              <div className="flex gap-4">
+                {([['all','指定なし（全件）'],['filled','入力済のみ'],['blank','空欄のみ']] as const).map(([val, label]) => (
+                  <label key={val} className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input type="radio" name="seisaAddressFilter" value={val}
+                      checked={seisaFilters.addressFilter === val}
+                      onChange={() => setSeisaFilters(p => ({ ...p, addressFilter: val }))}
+                      className="w-3.5 h-3.5 text-blue-600 focus:ring-blue-500 cursor-pointer" />
+                    <span className="text-sm text-gray-700">{label}</span>
+                  </label>
+                ))}
               </div>
             </div>
 
