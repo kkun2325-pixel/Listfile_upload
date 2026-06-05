@@ -22,7 +22,7 @@ interface Stats {
   unseisa_count:       number;
   tokunyu_count:       number;
   honsha_seisa_count?: number;
-  missing: { jikanfuri: number; teikyu: number; sekisuu: number; genre: number; bikou: number };
+  missing: { jikanfuri: number; teikyu: number; sekisuu: number; genre: number; bikou: number; name: number; address: number };
   groups: Record<string, GroupStat>;
   list_rank_distribution: { rank: string; count: number }[];
 }
@@ -126,7 +126,6 @@ export default function DashboardPage() {
   const [error, setError]               = useState("");
   const [activeTab, setActiveTab]       = useState<TabKey>("飲食SH");
   const [rankHistory, setRankHistory]   = useState<Record<string, string | number>[]>([]);
-  const [rank1Exporting, setRank1Exporting] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
@@ -149,27 +148,6 @@ export default function DashboardPage() {
       .then(data => { if (data.success) setRankHistory(data.history ?? []); })
       .catch(() => {});
   }, [router]);
-
-  async function handleRank1Export() {
-    const token = localStorage.getItem("auth_token");
-    if (!token) return;
-    setRank1Exporting(true);
-    try {
-      const res = await fetch("/api/export/seisa-list", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ filters: { listRanks: ["1"], unassignedOnly: false }, assignMode: "none" }),
-      });
-      if (!res.ok) { const e = await res.json(); alert(e.message ?? "エラー"); return; }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `精査リスト_ランク1_${new Date().toISOString().slice(0,10).replace(/-/g,"")}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } finally { setRank1Exporting(false); }
-  }
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-64">
@@ -239,7 +217,9 @@ export default function DashboardPage() {
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-0.5">
           未精査内訳（欠損カラム別）
         </p>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
+          <MissingCard label="店名未登録"     value={stats.missing.name}      total={stats.total} />
+          <MissingCard label="住所未登録"     value={stats.missing.address}   total={stats.total} />
           <MissingCard label="時間振り未登録" value={stats.missing.jikanfuri} total={stats.total} />
           <MissingCard label="定休日未登録"   value={stats.missing.teikyu}    total={stats.total} />
           <MissingCard label="席数未登録"     value={stats.missing.sekisuu}   total={stats.total} />
@@ -284,21 +264,9 @@ export default function DashboardPage() {
 
       {/* ─── ランク推移グラフ ＋ ランク1クイック出力 ─── */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <p className="text-sm font-semibold text-gray-700">リストランク推移（週次）</p>
-            <p className="text-xs text-gray-400 mt-0.5">管理画面「ランク記録」で定期的にスナップショットを保存すると反映されます</p>
-          </div>
-          <button
-            onClick={handleRank1Export}
-            disabled={rank1Exporting}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors shrink-0"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-            </svg>
-            {rank1Exporting ? "出力中..." : "ランク1を精査リストに出す"}
-          </button>
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-gray-700">リストランク推移（週次）</p>
+          <p className="text-xs text-gray-400 mt-0.5">管理画面「ランク記録」で定期的にスナップショットを保存すると反映されます</p>
         </div>
 
         {rankHistory.length >= 2 ? (

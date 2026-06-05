@@ -503,7 +503,7 @@ export interface DashboardStatsV2 {
   unseisa_count:       number
   tokunyu_count:       number
   honsha_seisa_count:  number
-  missing: { jikanfuri: number; teikyu: number; sekisuu: number; genre: number; bikou: number }
+  missing: { name: number; address: number; jikanfuri: number; teikyu: number; sekisuu: number; genre: number; bikou: number }
   groups: Record<string, GroupStat>
   list_rank_distribution: { rank: string; count: number }[]
 }
@@ -557,6 +557,8 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
                       AND "備考"    IS NOT NULL AND "備考"    != ''
                  THEN 1 ELSE 0 END) AS tokunyu_count,
         SUM(CASE WHEN "本社精査" = '1' THEN 1 ELSE 0 END) AS honsha_seisa_count,
+        SUM(CASE WHEN "名前"    IS NULL OR "名前"    = '' THEN 1 ELSE 0 END) AS missing_name,
+        SUM(CASE WHEN "住所2"   IS NULL OR "住所2"   = '' THEN 1 ELSE 0 END) AS missing_address,
         SUM(CASE WHEN "時間振り" IS NULL OR "時間振り" = '' THEN 1 ELSE 0 END) AS missing_jikanfuri,
         SUM(CASE WHEN "定休日"  IS NULL OR "定休日"  = '' THEN 1 ELSE 0 END) AS missing_teikyu,
         SUM(CASE WHEN "席数"    IS NULL OR "席数"    = '' THEN 1 ELSE 0 END) AS missing_sekisuu,
@@ -625,6 +627,8 @@ export async function getDashboardStatsV2(): Promise<DashboardStatsV2> {
     tokunyu_count:       Number(s.tokunyu_count       ?? 0),
     honsha_seisa_count:  Number(s.honsha_seisa_count  ?? 0),
     missing: {
+      name:      Number(s.missing_name      ?? 0),
+      address:   Number(s.missing_address   ?? 0),
       jikanfuri: Number(s.missing_jikanfuri ?? 0),
       teikyu:    Number(s.missing_teikyu    ?? 0),
       sekisuu:   Number(s.missing_sekisuu   ?? 0),
