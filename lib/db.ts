@@ -377,8 +377,10 @@ export async function batchUpsertCSVRows(
   const toInsert: typeof rows = []
   for (const r of rows) {
     const tel = r.row["電話番号"]?.trim() || null
+    // 電話番号も名前も空の行はスキップ（空行・合計行・ヘッダー行対策）
+    if (!tel && !r.row["名前"]?.trim()) continue
     if (tel && existingSet.has(tel)) toUpdate.push(r)
-    else toInsert.push(r)
+    else if (tel) toInsert.push(r)  // 電話番号がない行は挿入しない
   }
 
   // ② 更新（50件ずつ並列）
