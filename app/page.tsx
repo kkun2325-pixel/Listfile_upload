@@ -27,7 +27,7 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <nav className="bg-white shadow">
         <div className="container flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-blue-600 py-4">CSV Upload Manager</h1>
+          <h1 className="text-2xl font-bold text-blue-600 py-4">listfilemanager</h1>
           <div className="space-x-4">
             {isLoggedIn ? (
               <>

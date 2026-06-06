@@ -105,7 +105,7 @@ export default function Sidebar() {
     <aside className="fixed top-0 left-0 w-56 h-screen bg-white border-r border-gray-200 flex flex-col z-30">
       {/* ロゴ */}
       <div className="px-5 py-5 border-b border-gray-100">
-        <span className="text-sm font-semibold text-gray-900 tracking-tight">CSV Manager</span>
+        <span className="text-sm font-semibold text-gray-900 tracking-tight">listfilemanager</span>
       </div>
 
       {/* ナビゲーション */}
