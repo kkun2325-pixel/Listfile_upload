@@ -97,10 +97,10 @@ export type ListColumn = (typeof LIST_COLUMNS)[number]
 
 // ── INSERT ヘルパー ───────────────────────────────────────
 
-const COL_COUNT = 54
+const COL_COUNT = 55
 
 const INSERT_COLS = `id, upload_id, row_number, is_duplicate, created_at, updated_at,
-  "ID", "名前",
+  store_id, "ID", "名前",
   "電話番号", "住所1", "住所2",
   "Uber等エリア内外", "データ取得元", "業種大分類", "電話番号確認",
   "営業時間", "時間振り", "定休日", "席数", "ジャンル", "外人店舗",
@@ -121,11 +121,11 @@ function makeRowPlaceholders(count: number): string {
 
 function rowToArgs(
   internalId: string, uploadId: string, rowNumber: number,
-  row: Record<string, string>, now: string
+  row: Record<string, string>, now: string, storeId: string
 ): unknown[] {
   return [
     internalId, uploadId, rowNumber, 0, now, now,
-    null, row["名前"] ?? null,
+    storeId, null, row["名前"] ?? null,
     row["電話番号"] ?? null, row["住所1"] ?? null, row["住所2"] ?? null,
     row["Uber等エリア内外"] ?? null, row["データ取得元"] ?? null, row["業種大分類"] ?? null, row["電話番号確認"] ?? null,
     row["営業時間"] ?? null, row["時間振り"] ?? null, row["定休日"] ?? null, row["席数"] ?? null, row["ジャンル"] ?? null, row["外人店舗"] ?? null,
@@ -186,6 +186,7 @@ export async function initializeDatabase() {
       is_duplicate    INTEGER NOT NULL DEFAULT 0,
       created_at      TEXT NOT NULL,
       updated_at      TEXT NOT NULL,
+      store_id                TEXT UNIQUE,
       "ID"                    TEXT,
       "名前"                  TEXT,
       "電話番号"              TEXT,
@@ -282,7 +283,7 @@ export async function initializeDatabase() {
 
 export async function migrateSchema(): Promise<{ status: string; message: string }> {
   const sql = getDb()
-  const newCols = ['"名前" TEXT', '"住所1" TEXT', '"住所2" TEXT']
+  const newCols = ['"名前" TEXT', '"住所1" TEXT', '"住所2" TEXT', 'store_id TEXT UNIQUE']
   const added: string[] = []
   for (const colDef of newCols) {
     try {
@@ -352,6 +353,24 @@ export async function getCSVUploadById(uploadId: string) {
   return r[0] ?? null
 }
 
+// ── store_id 採番 ─────────────────────────────────────────
+
+async function generateStoreIds(sql: ReturnType<typeof getDb>, count: number): Promise<string[]> {
+  if (count === 0) return []
+  const res = await dyn(sql, `
+    SELECT COALESCE(MAX(
+      CASE WHEN store_id ~ '^S-[0-9]+$'
+      THEN CAST(SUBSTRING(store_id FROM 3) AS BIGINT)
+      ELSE 0 END
+    ), 0) AS max_num
+    FROM csv_data
+  `, [])
+  const maxNum = Number(res[0]?.max_num ?? 0)
+  return Array.from({ length: count }, (_, i) =>
+    `S-${String(maxNum + i + 1).padStart(5, '0')}`
+  )
+}
+
 // ── CSVデータ バッチアップサート ──────────────────────────
 
 export async function batchUpsertCSVRows(
@@ -404,7 +423,10 @@ export async function batchUpsertCSVRows(
           "担当者"         = COALESCE(NULLIF($12, ''), "担当者"),
           "店舗精査"       = COALESCE(NULLIF($13, ''), "店舗精査"),
           "本社精査"       = COALESCE(NULLIF($14, ''), "本社精査"),
-          is_duplicate = 1, updated_at = $15, upload_id = $16,
+          "名前"           = COALESCE(NULLIF($15, ''), "名前"),
+          "住所1"          = COALESCE(NULLIF($16, ''), "住所1"),
+          "住所2"          = COALESCE(NULLIF($17, ''), "住所2"),
+          is_duplicate = 1, updated_at = $18, upload_id = $19,
           is_data_changed = CASE WHEN
             "時間振り" IS DISTINCT FROM COALESCE(NULLIF($1, ''), "時間振り") OR
             "定休日"   IS DISTINCT FROM COALESCE(NULLIF($2, ''), "定休日")   OR
@@ -412,7 +434,7 @@ export async function batchUpsertCSVRows(
             "ジャンル" IS DISTINCT FROM COALESCE(NULLIF($4, ''), "ジャンル") OR
             "備考"     IS DISTINCT FROM COALESCE(NULLIF($5, ''), "備考")
           THEN 1 ELSE 0 END
-        WHERE "電話番号" = $17`,
+        WHERE "電話番号" = $20`,
         [
           row["時間振り"]       ?? null,
           row["定休日"]         ?? null,
@@ -428,6 +450,9 @@ export async function batchUpsertCSVRows(
           row["担当者"]         ?? null,
           row["店舗精査"]       ?? null,
           row["本社精査"]       ?? null,
+          row["名前"]           ?? null,
+          row["住所1"]          ?? null,
+          row["住所2"]          ?? null,
           now, uploadId,
           row["電話番号"]!.trim(),
         ]
@@ -435,12 +460,15 @@ export async function batchUpsertCSVRows(
     ))
   }
 
-  // ③ 挿入（50件ずつ multi-row INSERT）
+  // ③ 挿入（store_id 採番 → 50件ずつ multi-row INSERT）
+  const storeIds = await generateStoreIds(sql, toInsert.length)
+  const toInsertWithIds = toInsert.map((item, i) => ({ ...item, storeId: storeIds[i] }))
+
   const INSERT_CHUNK = 50
-  for (let i = 0; i < toInsert.length; i += INSERT_CHUNK) {
-    const chunk = toInsert.slice(i, i + INSERT_CHUNK)
+  for (let i = 0; i < toInsertWithIds.length; i += INSERT_CHUNK) {
+    const chunk = toInsertWithIds.slice(i, i + INSERT_CHUNK)
     const placeholders = makeRowPlaceholders(chunk.length)
-    const args = chunk.flatMap(({ internalId, rowNumber, row }) => rowToArgs(internalId, uploadId, rowNumber, row, now))
+    const args = chunk.flatMap(({ internalId, rowNumber, row, storeId }) => rowToArgs(internalId, uploadId, rowNumber, row, now, storeId))
     await dyn(sql, `INSERT INTO csv_data (${INSERT_COLS}) VALUES ${placeholders}`, args)
   }
 
@@ -1600,4 +1628,128 @@ export async function seedInitialTeams() {
     }
   }
   return { message: '初期データ登録完了' }
+}
+
+// ── 精査スナップショット ───────────────────────────────────
+
+const TAIGAI = `('閉店','業種対象外','情報不足','掲載保留','本社×','外人×','重複')`
+
+export async function ensureSeisaSnapshotsTable() {
+  const sql = getDb()
+  await dyn(sql, `
+    CREATE TABLE IF NOT EXISTS seisa_snapshots (
+      id           TEXT PRIMARY KEY,
+      upload_id    TEXT NOT NULL,
+      person_name  TEXT NOT NULL,
+      report_date  TEXT NOT NULL,
+      seisa_count  INTEGER NOT NULL DEFAULT 0,
+      fill_jf      INTEGER NOT NULL DEFAULT 0,
+      fill_sk      INTEGER NOT NULL DEFAULT 0,
+      fill_tk      INTEGER NOT NULL DEFAULT 0,
+      fill_gn      INTEGER NOT NULL DEFAULT 0,
+      fill_bk      INTEGER NOT NULL DEFAULT 0,
+      taigai_json  TEXT NOT NULL DEFAULT '{}',
+      created_at   TEXT NOT NULL,
+      CONSTRAINT seisa_snapshots_uniq UNIQUE (upload_id, person_name)
+    )
+  `)
+  await dyn(sql, `CREATE INDEX IF NOT EXISTS idx_seisa_date   ON seisa_snapshots(report_date)`)
+  await dyn(sql, `CREATE INDEX IF NOT EXISTS idx_seisa_person ON seisa_snapshots(person_name)`)
+  await dyn(sql, `CREATE INDEX IF NOT EXISTS idx_seisa_upload ON seisa_snapshots(upload_id)`)
+
+  // 未処理のアップロードを一括バックフィル（既存分はスキップ）
+  await dyn(sql, `
+    INSERT INTO seisa_snapshots
+      (id, upload_id, person_name, report_date,
+       seisa_count, fill_jf, fill_sk, fill_tk, fill_gn, fill_bk, taigai_json, created_at)
+    SELECT
+      gen_random_uuid()::text,
+      cu.id,
+      regexp_replace(cd."担当者", '[0-9].*$', ''),
+      cu.report_date,
+      COUNT(*) FILTER (WHERE cd."時間振り" IS NOT NULL AND cd."時間振り" != '')::int,
+      COUNT(*) FILTER (WHERE cd."時間振り" IS NOT NULL AND cd."時間振り" != '')::int,
+      COUNT(*) FILTER (WHERE (cd."席数"    IS NOT NULL AND cd."席数"    != '') OR cd."時間振り" IN ${TAIGAI})::int,
+      COUNT(*) FILTER (WHERE (cd."定休日"  IS NOT NULL AND cd."定休日"  != '') OR cd."時間振り" IN ${TAIGAI})::int,
+      COUNT(*) FILTER (WHERE (cd."ジャンル" IS NOT NULL AND cd."ジャンル" != '') OR cd."時間振り" IN ${TAIGAI})::int,
+      COUNT(*) FILTER (WHERE (cd."備考"    IS NOT NULL AND cd."備考"    != '') OR cd."時間振り" IN ${TAIGAI})::int,
+      '{}',
+      NOW()::text
+    FROM csv_uploads cu
+    JOIN csv_data cd ON cd.upload_id = cu.id
+    WHERE cu.report_date IS NOT NULL
+      AND cd."担当者" IS NOT NULL AND cd."担当者" != ''
+      AND NOT EXISTS (
+        SELECT 1 FROM seisa_snapshots ss WHERE ss.upload_id = cu.id
+      )
+    GROUP BY cu.id, regexp_replace(cd."担当者", '[0-9].*$', ''), cu.report_date
+    HAVING COUNT(*) FILTER (WHERE cd."時間振り" IS NOT NULL AND cd."時間振り" != '') > 0
+    ON CONFLICT (upload_id, person_name) DO NOTHING
+  `)
+}
+
+export async function saveSeisaSnapshot(uploadId: string, reportDate: string) {
+  if (!reportDate) return
+  const sql = getDb()
+  await ensureSeisaSnapshotsTable()
+
+  const seisaRows = await dyn(sql, `
+    SELECT
+      regexp_replace(cd."担当者", '[0-9].*$', '') AS person_name,
+      COUNT(*) FILTER (WHERE cd."時間振り" IS NOT NULL AND cd."時間振り" != '')::int AS seisa_count,
+      COUNT(*) FILTER (WHERE cd."時間振り" IS NOT NULL AND cd."時間振り" != '')::int AS fill_jf,
+      COUNT(*) FILTER (WHERE (cd."席数"    IS NOT NULL AND cd."席数"    != '') OR cd."時間振り" IN ${TAIGAI})::int AS fill_sk,
+      COUNT(*) FILTER (WHERE (cd."定休日"  IS NOT NULL AND cd."定休日"  != '') OR cd."時間振り" IN ${TAIGAI})::int AS fill_tk,
+      COUNT(*) FILTER (WHERE (cd."ジャンル" IS NOT NULL AND cd."ジャンル" != '') OR cd."時間振り" IN ${TAIGAI})::int AS fill_gn,
+      COUNT(*) FILTER (WHERE (cd."備考"    IS NOT NULL AND cd."備考"    != '') OR cd."時間振り" IN ${TAIGAI})::int AS fill_bk
+    FROM csv_data cd
+    WHERE cd.upload_id = $1
+      AND cd."担当者" IS NOT NULL AND cd."担当者" != ''
+    GROUP BY regexp_replace(cd."担当者", '[0-9].*$', '')
+    HAVING COUNT(*) FILTER (WHERE cd."時間振り" IS NOT NULL AND cd."時間振り" != '') > 0
+  `, [uploadId])
+
+  const taigaiRows = await dyn(sql, `
+    SELECT
+      regexp_replace(cd."担当者", '[0-9].*$', '') AS person_name,
+      cd."時間振り" AS reason,
+      COUNT(*)::int AS cnt
+    FROM csv_data cd
+    WHERE cd.upload_id = $1
+      AND cd."担当者" IS NOT NULL AND cd."担当者" != ''
+      AND cd."時間振り" IN ${TAIGAI}
+    GROUP BY regexp_replace(cd."担当者", '[0-9].*$', ''), cd."時間振り"
+  `, [uploadId])
+
+  const taigaiMap: Record<string, Record<string, number>> = {}
+  for (const row of taigaiRows) {
+    const p = String(row.person_name)
+    const r = String(row.reason)
+    if (!taigaiMap[p]) taigaiMap[p] = {}
+    taigaiMap[p][r] = Number(row.cnt)
+  }
+
+  const now = new Date().toISOString()
+  for (const row of seisaRows) {
+    const person = String(row.person_name)
+    await dyn(sql, `
+      INSERT INTO seisa_snapshots
+        (id, upload_id, person_name, report_date,
+         seisa_count, fill_jf, fill_sk, fill_tk, fill_gn, fill_bk, taigai_json, created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      ON CONFLICT (upload_id, person_name) DO UPDATE SET
+        seisa_count = EXCLUDED.seisa_count,
+        fill_jf     = EXCLUDED.fill_jf,
+        fill_sk     = EXCLUDED.fill_sk,
+        fill_tk     = EXCLUDED.fill_tk,
+        fill_gn     = EXCLUDED.fill_gn,
+        fill_bk     = EXCLUDED.fill_bk,
+        taigai_json = EXCLUDED.taigai_json
+    `, [
+      crypto.randomUUID(), uploadId, person, reportDate,
+      Number(row.seisa_count), Number(row.fill_jf), Number(row.fill_sk),
+      Number(row.fill_tk), Number(row.fill_gn), Number(row.fill_bk),
+      JSON.stringify(taigaiMap[person] ?? {}), now,
+    ])
+  }
 }

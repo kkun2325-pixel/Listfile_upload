@@ -104,10 +104,11 @@ export default function AdminPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ─── コール履歴インポート ──────────────────────────────
-  const [chFile, setChFile]     = useState<File | null>(null);
-  const [chGroup, setChGroup]   = useState<ListGroup>("飲食SH");
-  const [chStatus, setChStatus] = useState<Status>("idle");
-  const [chMsg, setChMsg]       = useState("");
+  const [chFile, setChFile]         = useState<File | null>(null);
+  const [chGroup, setChGroup]       = useState<ListGroup>("飲食SH");
+  const [chStatus, setChStatus]     = useState<Status>("idle");
+  const [chMsg, setChMsg]           = useState("");
+  const [, setChProgress]           = useState({ current: 0, total: 0 });
   const chFileRef = useRef<HTMLInputElement>(null);
 
   // ─── ランクスナップショット ────────────────────────────
@@ -179,28 +180,73 @@ export default function AdminPage() {
 
   async function handleCallHistoryImport() {
     if (!chFile) { setChMsg("CSVファイルを選択してください"); setChStatus("error"); return; }
-    setChStatus("running");
-    setChMsg("");
+    setChStatus("running"); setChMsg(""); setChProgress({ current: 0, total: 0 });
+    const token = localStorage.getItem("auth_token")!;
+
     try {
-      const token = localStorage.getItem("auth_token")!;
-      const form = new FormData();
-      form.append("file", chFile);
-      form.append("listGroup", chGroup);
-      const res = await fetch("/api/admin/import-call-history", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      });
-      const data = await res.json();
-      if (data.success) {
-        setChStatus("success");
-        setChMsg(data.message ?? "完了");
-        setChFile(null);
-        if (chFileRef.current) chFileRef.current.value = "";
-      } else {
+      // ① クライアント側でCSVをパース（大きいファイルでも安全）
+      const text = await chFile.text();
+      const lines = text.replace(/^﻿/, '').split(/\r?\n/);
+      if (lines.length < 2) { setChStatus("error"); setChMsg("データが空です"); return; }
+
+      const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
+      const phoneIdx  = headers.indexOf('電話番号');
+      const resultIdx = headers.indexOf('コール結果');
+      const statusIdx = headers.indexOf('ステータス');
+      const dtIdx     = headers.indexOf('コール日時');
+      const agentIdx  = headers.indexOf('ユーザー');
+
+      if (phoneIdx < 0 || resultIdx < 0) {
         setChStatus("error");
-        setChMsg(data.message ?? "インポートに失敗しました");
+        setChMsg("「電話番号」「コール結果」列が見つかりません。Evercallからエクスポートしたファイルを選択してください。");
+        return;
       }
+
+      // ② 行データを抽出（SKIP除外）
+      type RowObj = { phone: string; callResult: string; status: string; callDatetime: string; agent: string };
+      const allRows: RowObj[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',');
+        if (cols.length <= phoneIdx) continue;
+        const phone      = (cols[phoneIdx]  ?? '').replace(/^"|"$/g, '').trim();
+        const callResult = (cols[resultIdx] ?? '').replace(/^"|"$/g, '').trim();
+        if (!phone || !/^\d/.test(phone)) continue;
+        if (callResult === '自動SKIP' || callResult === 'SKIP') continue;
+        allRows.push({
+          phone,
+          callResult,
+          status:       statusIdx >= 0 ? (cols[statusIdx] ?? '').replace(/^"|"$/g, '').trim() : '',
+          callDatetime: dtIdx    >= 0 ? (cols[dtIdx]     ?? '').replace(/^"|"$/g, '').trim() : '',
+          agent:        agentIdx >= 0 ? (cols[agentIdx]  ?? '').replace(/^"|"$/g, '').trim() : '',
+        });
+      }
+
+      if (allRows.length === 0) { setChStatus("error"); setChMsg("有効なデータが0件です"); return; }
+
+      // ③ 2000件ずつバッチ送信
+      const BATCH = 2000;
+      const batches = Math.ceil(allRows.length / BATCH);
+      setChProgress({ current: 0, total: allRows.length });
+      let totalPhones = 0, totalRecords = 0;
+
+      for (let b = 0; b < batches; b++) {
+        const chunk = allRows.slice(b * BATCH, (b + 1) * BATCH);
+        const res = await fetch("/api/admin/import-call-history", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ listGroup: chGroup, rows: chunk }),
+        });
+        const data = await res.json();
+        if (!data.success) { setChStatus("error"); setChMsg(data.message ?? "エラー"); return; }
+        totalPhones  += data.phoneCount      ?? 0;
+        totalRecords += data.recordsInserted ?? 0;
+        setChProgress({ current: Math.min((b + 1) * BATCH, allRows.length), total: allRows.length });
+      }
+
+      setChStatus("success");
+      setChMsg(`完了: ${totalPhones.toLocaleString()} 件の電話番号・架電記録 ${totalRecords.toLocaleString()} 件を保存しました`);
+      setChFile(null);
+      if (chFileRef.current) chFileRef.current.value = "";
     } catch (e) {
       setChStatus("error");
       setChMsg(String(e));
@@ -318,6 +364,11 @@ export default function AdminPage() {
       id: "snapshot", title: "ランク記録", desc: "今日のリストランク分布をグラフ用に保存する",
       bg: "bg-teal-50", border: "border-teal-200", iconBg: "bg-teal-100", iconColor: "text-teal-600",
       icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>,
+    },
+    {
+      id: "export-all", title: "全件CSV出力", desc: "store_id含む全件・全カラムをバックアップ/移行用に出力する",
+      bg: "bg-cyan-50", border: "border-cyan-200", iconBg: "bg-cyan-100", iconColor: "text-cyan-600",
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>,
     },
   ] as const;
 
@@ -481,6 +532,7 @@ export default function AdminPage() {
         {activeSection === "team"         && <TeamManagementSection />}
         {activeSection === "clean-rows"   && <CleanEmptyRowsSection />}
         {activeSection === "clean-phones" && <CleanInvalidPhonesSection />}
+        {activeSection === "export-all"   && <ExportAllSection />}
 
         {/* ランク記録（スナップショット） */}
         {activeSection === "snapshot" && (
@@ -1021,6 +1073,67 @@ function CleanEmptyRowsSection() {
 
       {status === "error" && msg && (
         <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{msg}</div>
+      )}
+    </div>
+  );
+}
+
+// ── 全件CSVエクスポート ──────────────────────────────────────
+
+function ExportAllSection() {
+  const [status, setStatus] = useState<Status>("idle");
+  const [msg, setMsg]       = useState("");
+
+  const alertClass: Record<Status, string> = {
+    idle:    "",
+    running: "bg-yellow-50 border border-yellow-200 text-yellow-800",
+    success: "bg-green-50 border border-green-200 text-green-800",
+    error:   "bg-red-50 border border-red-200 text-red-700",
+  };
+
+  async function handleExport() {
+    setStatus("running"); setMsg("");
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch("/api/admin/export-all", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setStatus("error"); setMsg(d.message ?? "エクスポートに失敗しました");
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+      const filename = match ? decodeURIComponent(match[1]) : "csv_data_全件.csv";
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+
+      setStatus("success"); setMsg("ダウンロードを開始しました");
+    } catch (e) {
+      setStatus("error"); setMsg(String(e));
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 className="text-base font-semibold text-gray-900 mb-1">全件CSV出力</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        csv_data の全件・全カラム（store_id 含む）をCSVでダウンロードします。バックアップ・他環境への移行に使用してください。
+      </p>
+      <button onClick={handleExport} disabled={status === "running"}
+        className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-700 disabled:opacity-40 transition-colors">
+        {status === "running" ? "エクスポート中..." : "全件CSVをダウンロード"}
+      </button>
+      {status !== "idle" && msg && (
+        <div className={`mt-3 rounded-lg px-4 py-3 text-sm ${alertClass[status]}`}>
+          {status === "success" && "✓ "}{status === "error" && "✗ "}{msg}
+        </div>
       )}
     </div>
   );
