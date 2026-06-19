@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Papa from "papaparse";
 import { mapCsvColumnsToDb } from "@/lib/csv";
+import { useUploadProgress } from "@/app/contexts/upload-progress";
 
 interface UnregisteredMember {
   name: string;
@@ -34,6 +35,7 @@ const TEAM_OPTIONS = ['第五本部', '第五本部（アルバイト）', '第�
 
 export default function UploadPage() {
   const router = useRouter();
+  const { startProgress, updateProgress: updateProgress_ctx, finishProgress } = useUploadProgress();
   const [activeTab, setActiveTab] = useState<Tab>("upload");
 
   // アップロードフォーム状態
@@ -284,11 +286,16 @@ export default function UploadPage() {
 
       let uploadId = "";
 
+      // グローバル進捗トースト開始
+      startProgress(totalRows, file!.name);
+
       // 進捗更新ヘルパー
       const updateProgress = (sent: number) => {
-        const pct = Math.round(10 + (Math.min(sent, totalRows) / totalRows) * 85);
+        const clamped = Math.min(sent, totalRows);
+        const pct = Math.round(10 + (clamped / totalRows) * 85);
         setProgress(pct);
-        setProgressLabel(`送信中... ${Math.min(sent, totalRows).toLocaleString()} / ${totalRows.toLocaleString()} 行`);
+        setProgressLabel(`送信中... ${clamped.toLocaleString()} / ${totalRows.toLocaleString()} 行`);
+        updateProgress_ctx(clamped);
       };
 
       // バッチ送信ヘルパー（並列処理内でも使用）
@@ -328,6 +335,8 @@ export default function UploadPage() {
       if (numBatches === 1) {
         // 1バッチで完了
         setProgress(100); setProgressLabel("完了");
+        updateProgress_ctx(totalRows);
+        finishProgress();
         setResultModal({ inserted: Number(firstData.inserted_count ?? 0), seisaCount });
       } else {
         // ── STEP2: 中間バッチ（並列送信） ──
@@ -342,6 +351,8 @@ export default function UploadPage() {
         const lastStart  = batchStarts[numBatches - 1];
         const finalData  = await sendOne(lastStart, true, false);
         setProgress(100); setProgressLabel("完了");
+        updateProgress_ctx(totalRows);
+        finishProgress();
         setResultModal({ inserted: Number(finalData.inserted_count ?? 0), seisaCount });
       }
 

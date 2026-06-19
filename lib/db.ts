@@ -4,7 +4,7 @@
 
 let _pool: Pool | null = null
 
-function getPool(): Pool {
+export function getPool(): Pool {
   if (!_pool) {
     const url = (process.env.DATABASE_URL ?? '').replace(/^﻿/, '').trim()
     if (!url) throw new Error('DATABASE_URL が設定されていません')
@@ -903,6 +903,70 @@ export async function getRankHistory(): Promise<{ date: string; [rank: string]: 
   } catch { return [] }
 }
 
+// ── 計算ランク統計 ────────────────────────────────────────────
+
+export interface CalculatedRankStats {
+  distribution: Record<string, number>   // "0"〜"7" → 件数
+  rank1Missing: { seki_only: number; jikan_only: number; both: number }
+}
+
+export async function getCalculatedRankStats(): Promise<CalculatedRankStats> {
+  const pool = getPool()
+  const result = await pool.query(`
+    WITH call_agg AS (
+      SELECT
+        phone_number,
+        BOOL_OR(result_rank BETWEEN 1 AND 9)            AS has_valid_call,
+        BOOL_OR(result_rank BETWEEN 3 AND 9)            AS has_response,
+        BOOL_OR(result_rank >= 5 AND result_rank < 10)  AS has_decision,
+        BOOL_OR(result_rank >= 6 AND result_rank < 10)  AS has_valid,
+        BOOL_OR(result_rank = 9)                        AS has_appointment
+      FROM call_records
+      GROUP BY phone_number
+    ),
+    ranked AS (
+      SELECT
+        CASE
+          WHEN ("名前" IS NULL OR "名前" = '')
+            OR ("電話番号" IS NULL OR "電話番号" = '')  THEN 0
+          WHEN ("住所1" IS NULL OR "住所1" = '')
+            AND ("住所2" IS NULL OR "住所2" = '')       THEN 0
+          WHEN ("席数" IS NULL OR "席数" = '')
+            OR  ("時間振り" IS NULL OR "時間振り" = '') THEN 1
+          WHEN ca.has_valid_call IS NOT TRUE             THEN 2
+          WHEN ca.has_response   IS NOT TRUE             THEN 3
+          WHEN ca.has_decision   IS NOT TRUE             THEN 4
+          WHEN ca.has_valid      IS NOT TRUE             THEN 5
+          WHEN ca.has_appointment IS NOT TRUE            THEN 6
+          ELSE 7
+        END AS calc_rank,
+        ("席数"   IS NULL OR "席数"   = '') AS miss_seki,
+        ("時間振り" IS NULL OR "時間振り" = '') AS miss_jikan
+      FROM csv_data
+      LEFT JOIN call_agg ca ON ca.phone_number = csv_data."電話番号"
+    )
+    SELECT
+      COUNT(*) FILTER (WHERE calc_rank = 0) AS r0,
+      COUNT(*) FILTER (WHERE calc_rank = 1) AS r1,
+      COUNT(*) FILTER (WHERE calc_rank = 2) AS r2,
+      COUNT(*) FILTER (WHERE calc_rank = 3) AS r3,
+      COUNT(*) FILTER (WHERE calc_rank = 4) AS r4,
+      COUNT(*) FILTER (WHERE calc_rank = 5) AS r5,
+      COUNT(*) FILTER (WHERE calc_rank = 6) AS r6,
+      COUNT(*) FILTER (WHERE calc_rank = 7) AS r7,
+      COUNT(*) FILTER (WHERE calc_rank = 1 AND miss_seki AND NOT miss_jikan) AS r1_seki_only,
+      COUNT(*) FILTER (WHERE calc_rank = 1 AND miss_jikan AND NOT miss_seki) AS r1_jikan_only,
+      COUNT(*) FILTER (WHERE calc_rank = 1 AND miss_seki AND miss_jikan)     AS r1_both
+    FROM ranked
+  `)
+  const row = result.rows[0]
+  const n = (k: string) => Number(row[k] ?? 0)
+  return {
+    distribution: { "0": n("r0"), "1": n("r1"), "2": n("r2"), "3": n("r3"), "4": n("r4"), "5": n("r5"), "6": n("r6"), "7": n("r7") },
+    rank1Missing: { seki_only: n("r1_seki_only"), jikan_only: n("r1_jikan_only"), both: n("r1_both") },
+  }
+}
+
 // ── ダッシュボード統計（旧版・後方互換） ─────────────────────
 
 export async function getDashboardStatsAll() {
@@ -1135,6 +1199,7 @@ export interface ExportFilters {
   progressMin?: number        // 最大進捗 下限（以上）
   progressMax?: number        // 最大進捗 上限（以下）
   addressFilter?: 'filled' | 'blank' | 'all'  // 住所フィルター（default: filled）
+  listRanks?: string[]        // リストランクフィルター（"1"〜"7"）
 }
 
 const PROGRESS_COLUMN: Record<string, string> = {
@@ -1145,7 +1210,7 @@ const PROGRESS_COLUMN: Record<string, string> = {
   'ペイメント': 'ペイメント_コール履歴',
 }
 
-function buildFilterWhere(filters: ExportFilters): { where: string; args: unknown[] } {
+export function buildFilterWhere(filters: ExportFilters): { where: string; args: unknown[] } {
   const parts: string[] = []
   const args: unknown[] = []
   let i = 1
@@ -1208,6 +1273,11 @@ function buildFilterWhere(filters: ExportFilters): { where: string; args: unknow
     } else {
       parts.push(`NOT EXISTS (SELECT 1 FROM evercall_invested ei WHERE ei.phone_number = csv_data."電話番号")`)
     }
+  }
+  if (filters.listRanks && filters.listRanks.length > 0) {
+    parts.push(`"リストランク" = ANY($${i}::text[])`)
+    args.push(filters.listRanks)
+    i++
   }
 
   return {

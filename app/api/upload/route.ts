@@ -4,6 +4,7 @@ import {
   createCSVUpload,
   updateCSVUploadCounts,
   batchUpsertCSVRows,
+  saveSeisaSnapshot,
   getDb,
 } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
@@ -37,6 +38,7 @@ async function handleFormData(request: NextRequest, userId: string) {
 
   const { insertedCount, updatedCount } = await batchUpsertCSVRows(uploadId, rowsPayload);
   await updateCSVUploadCounts(uploadId, insertedCount, updatedCount);
+  if (reportDate) await saveSeisaSnapshot(uploadId, reportDate);
 
   return NextResponse.json({
     success: true,
@@ -104,8 +106,10 @@ async function handleJsonBatch(request: NextRequest, userId: string) {
           updated_count  = updated_count  + ${updatedCount}
       WHERE id = ${uploadId}
     `;
-    const finalRes = await sql`SELECT inserted_count, updated_count, row_count FROM csv_uploads WHERE id = ${uploadId}`;
+    const finalRes = await sql`SELECT inserted_count, updated_count, row_count, report_date FROM csv_uploads WHERE id = ${uploadId}`;
     const r = finalRes[0];
+    const reportDate = r?.report_date ? String(r.report_date) : null;
+    if (reportDate) await saveSeisaSnapshot(uploadId, reportDate);
     return NextResponse.json({
       success: true,
       message: "ファイルをアップロードしました",

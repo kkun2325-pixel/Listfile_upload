@@ -63,6 +63,10 @@ export async function GET(request: NextRequest) {
     const af = sp.get("addressFilter");
     if (af === 'filled' || af === 'blank' || af === 'all') filters.addressFilter = af;
 
+    const listRanksRaw = sp.getAll("listRanks");
+    const listRanks = listRanksRaw.flatMap((v) => v.split(",").map((s) => s.trim())).filter(Boolean);
+    if (listRanks.length > 0) filters.listRanks = listRanks;
+
     const [total, timeCategoryCounts] = await Promise.all([
       getFilteredCount(filters),
       getFilteredCountByTimeCategory(filters),

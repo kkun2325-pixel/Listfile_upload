@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import Papa from "papaparse";
 import { getDb, bulkInsertCallRecords, type CallRecord } from "@/lib/db";
 import { verifyToken, extractToken } from "@/lib/auth";
 
@@ -12,8 +11,8 @@ function coreSuffix(s: string): string {
 }
 
 function getResultRank(callResult: string, status: string): number {
-  const result   = callResult.trim()
-  const statCore = coreSuffix(status)
+  const result    = callResult.trim()
+  const statCore  = coreSuffix(status)
   const resultCore = coreSuffix(result)
 
   if (statCore === '受注')       return 9
@@ -33,25 +32,18 @@ function getResultRank(callResult: string, status: string): number {
   return 1
 }
 
-function isSkip(callResult: string): boolean {
-  const r = callResult.trim()
-  return r === '自動SKIP' || r === 'SKIP'
-}
-
-// コール日時をパース（YY/MM/DD HH:MM:SS → 曜日・時刻）
-// 0=月, 1=火, 2=水, 3=木, 4=金, 5=土, 6=日
+// コール日時パース（YY/MM/DD HH:MM:SS → 曜日・時刻）
+// 0=月,1=火,2=水,3=木,4=金,5=土,6=日
 function parseCallDatetime(dtStr: string): { dayOfWeek: number; hour: number } | null {
   const m = dtStr.trim().match(/^(\d{2})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})/)
   if (!m) return null
   const [, yy, mm, dd, hh] = m
   const date = new Date(`20${yy}-${mm}-${dd}T${hh}:00:00`)
   if (isNaN(date.getTime())) return null
-  const jsDow = date.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
-  const jpDow = jsDow === 0 ? 6 : jsDow - 1 // 0=月 ... 6=日
+  const jsDow = date.getDay()
+  const jpDow = jsDow === 0 ? 6 : jsDow - 1
   return { dayOfWeek: jpDow, hour: parseInt(hh, 10) }
 }
-
-// ── グループ → カラム ────────────────────────────────────────
 
 const GROUP_COLUMN: Record<string, string> = {
   '飲食SH':    '飲食SH最大進捗',
@@ -60,61 +52,58 @@ const GROUP_COLUMN: Record<string, string> = {
   'ペイメント': 'ペイメント_コール履歴',
 }
 
-// ── POST ──────────────────────────────────────────────────────
+// ── POST: バッチJSON受信 ──────────────────────────────────────
+// Body: { listGroup, rows: [{phone, callResult, status, callDatetime, agent}] }
 
 export async function POST(request: NextRequest) {
   try {
     const token   = extractToken(request.headers.get("authorization"))
     const payload = token ? verifyToken(token) : null
-    if (!payload)              return NextResponse.json({ success: false, message: "認証が必要です" },        { status: 401 })
+    if (!payload)                  return NextResponse.json({ success: false, message: "認証が必要です" },        { status: 401 })
     if (payload.role !== "manager") return NextResponse.json({ success: false, message: "アクセス権限がありません" }, { status: 403 })
 
-    const formData  = await request.formData()
-    const file      = formData.get("file")      as File   | null
-    const listGroup = (formData.get("listGroup") as string | null)?.trim() ?? ""
+    const body = await request.json() as {
+      listGroup: string
+      rows: Array<{ phone: string; callResult: string; status: string; callDatetime: string; agent: string }>
+    }
 
-    if (!file)                    return NextResponse.json({ success: false, message: "ファイルが必要です" },        { status: 400 })
-    if (!GROUP_COLUMN[listGroup]) return NextResponse.json({ success: false, message: "リストグループが無効です" }, { status: 400 })
+    const { listGroup, rows } = body
+    if (!listGroup || !GROUP_COLUMN[listGroup]) {
+      return NextResponse.json({ success: false, message: "リストグループが無効です" }, { status: 400 })
+    }
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return NextResponse.json({ success: false, message: "データが空です" }, { status: 400 })
+    }
 
-    const text   = await file.text()
-    const parsed = Papa.parse<Record<string, string>>(text.replace(/^﻿/, ''), {
-      header: true, skipEmptyLines: true, dynamicTyping: false,
-    })
+    // ── 1. ランク計算・日時パース ────────────────────────────
+    const phoneRankMap  = new Map<string, number>()
+    const callRecords:  CallRecord[] = []
 
-    // ── 1. 電話番号 → 最大ランク（既存機能）──────────────────
-    const phoneRankMap = new Map<string, number>()
-    // ── 2. call_records 用個別レコード ──────────────────────
-    const callRecords: CallRecord[] = []
-
-    for (const row of parsed.data) {
-      const phone      = (row['電話番号'] ?? '').trim()
-      const callResult = (row['コール結果'] ?? '').trim()
-      const status     = (row['ステータス'] ?? '').trim()
-      const dtStr      = (row['コール日時'] ?? '').trim()
-      const agent      = (row['ユーザー']   ?? '').trim()
+    for (const row of rows) {
+      const phone      = (row.phone       ?? '').trim()
+      const callResult = (row.callResult  ?? '').trim()
+      const status     = (row.status      ?? '').trim()
+      const dtStr      = (row.callDatetime ?? '').trim()
+      const agent      = (row.agent       ?? '').trim()
 
       if (!phone || !/^\d/.test(phone)) continue
 
       const rank = getResultRank(callResult, status)
 
-      // 最大進捗更新
       const cur = phoneRankMap.get(phone) ?? 0
       if (rank > cur) phoneRankMap.set(phone, rank)
 
-      // 自動SKIP / SKIP は call_records に保存しない
-      if (isSkip(callResult)) continue
-
       const dt = parseCallDatetime(dtStr)
       callRecords.push({
-        phone_number: phone,
-        list_group:   listGroup,
+        phone_number:  phone,
+        list_group:    listGroup,
         call_datetime: dtStr || undefined,
-        day_of_week:  dt?.dayOfWeek,
-        hour:         dt?.hour,
-        call_result:  callResult || undefined,
-        status:       status,
-        agent:        agent || undefined,
-        result_rank:  rank,
+        day_of_week:   dt?.dayOfWeek,
+        hour:          dt?.hour,
+        call_result:   callResult || undefined,
+        status,
+        agent:         agent || undefined,
+        result_rank:   rank,
       })
     }
 
@@ -127,7 +116,7 @@ export async function POST(request: NextRequest) {
     const phones = Array.from(phoneRankMap.keys())
     const ranks  = Array.from(phoneRankMap.values())
 
-    // ── 3. csv_data の最大進捗を更新 ────────────────────────
+    // ── 2. csv_data の最大進捗を更新 ──────────────────────────
     await db.query(`
       UPDATE csv_data SET "${column}" = t.rank::text
       FROM unnest($1::text[], $2::integer[]) AS t(phone, rank)
@@ -146,16 +135,13 @@ export async function POST(request: NextRequest) {
       WHERE "電話番号" = ANY($1::text[])
     `, [phones])
 
-    // ── 4. call_records に個別レコードを保存 ────────────────
+    // ── 3. call_records に個別レコードを保存 ──────────────────
     const recordsInserted = await bulkInsertCallRecords(callRecords)
 
     return NextResponse.json({
       success: true,
-      listGroup,
       phoneCount:      phoneRankMap.size,
-      rowCount:        parsed.data.length,
       recordsInserted,
-      message: `${phoneRankMap.size.toLocaleString()} 件の電話番号を処理（架電記録 ${recordsInserted.toLocaleString()} 件保存）`,
     })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)

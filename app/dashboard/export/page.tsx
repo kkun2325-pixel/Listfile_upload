@@ -18,6 +18,7 @@ interface ExportFilters {
   progressMin: string;
   progressMax: string;
   addressFilter: 'filled' | 'blank' | 'all';
+  listRanks: string[];
 }
 
 interface SeisaListFilters {
@@ -49,7 +50,17 @@ interface HistoryItem {
 interface TeamMember { id: string; name: string }
 interface Team { id: string; name: string; members: TeamMember[] }
 
-const EMPTY_FILTERS: ExportFilters = { genres: [], timeCategories: [], seatMin: "", seatMax: "", bikou: [], excludeInvested: false, progressGroup: "", progressMin: "", progressMax: "", addressFilter: "filled" };
+const LIST_RANK_OPTIONS: { value: string; label: string }[] = [
+  { value: "1", label: "ランク1：店名+電話番号+住所あり" },
+  { value: "2", label: "ランク2：+席数+時間振りあり" },
+  { value: "3", label: "ランク3：+架電可能（現アナ以外）" },
+  { value: "4", label: "ランク4：+対応履歴あり" },
+  { value: "5", label: "ランク5：+決裁履歴あり" },
+  { value: "6", label: "ランク6：+有効履歴あり" },
+  { value: "7", label: "ランク7：アポ受注済" },
+];
+
+const EMPTY_FILTERS: ExportFilters = { genres: [], timeCategories: [], seatMin: "", seatMax: "", bikou: [], excludeInvested: false, progressGroup: "", progressMin: "", progressMax: "", addressFilter: "filled", listRanks: [] };
 const PROGRESS_GROUPS = ["全部", "飲食SH", "サイネージ", "デリバリー", "ペイメント"] as const;
 const EMPTY_SEISA_FILTERS: SeisaListFilters = { timeCategories: [], genres: [], bikou: [], seatMin: "", seatMax: "", seatBlank: false, unassignedOnly: true, excludeName: "", excludeAddress: "", addressFilter: "all" };
 
@@ -240,6 +251,7 @@ export default function ExportPage() {
         if (f.progressMax) sp.set("progressMax", f.progressMax);
       }
       if (f.addressFilter && f.addressFilter !== 'filled') sp.set("addressFilter", f.addressFilter);
+      f.listRanks.forEach((r) => sp.append("listRanks", r));
       const res = await fetch(`/api/export/preview?${sp}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       if (data.success) setPreview(data);
@@ -364,6 +376,7 @@ export default function ExportPage() {
             progressMin: filters.progressMin ? Number(filters.progressMin) : undefined,
             progressMax: filters.progressMax ? Number(filters.progressMax) : undefined,
             addressFilter: filters.addressFilter !== 'filled' ? filters.addressFilter : undefined,
+            listRanks: filters.listRanks.length > 0 ? filters.listRanks : undefined,
           },
           listGroup, startListNumber: startNum, exportDate: todayYMD(),
         }),
@@ -406,6 +419,7 @@ export default function ExportPage() {
             progressMin: filters.progressMin ? Number(filters.progressMin) : undefined,
             progressMax: filters.progressMax ? Number(filters.progressMax) : undefined,
             addressFilter: filters.addressFilter !== 'filled' ? filters.addressFilter : undefined,
+            listRanks: filters.listRanks.length > 0 ? filters.listRanks : undefined,
           },
           fileName: `飲食_架電リスト_${today}.csv`,
         }),
@@ -488,7 +502,8 @@ export default function ExportPage() {
   // ─── 計算値（精査済みタブ）────────────────────────────────
   const seatConditionText = buildSeatConditionText(filters.seatMin, filters.seatMax);
   const hasAnyFilter = filters.genres.length > 0 || filters.timeCategories.length > 0 ||
-    filters.seatMin !== "" || filters.seatMax !== "" || filters.bikou.length > 0 || filters.excludeInvested;
+    filters.seatMin !== "" || filters.seatMax !== "" || filters.bikou.length > 0 || filters.excludeInvested ||
+    filters.listRanks.length > 0;
   const startNum = parseInt(startListNumber) || 1;
   const isStartNumValid = !isNaN(parseInt(startListNumber)) && parseInt(startListNumber) >= 1 && parseInt(startListNumber) <= 9999;
   const categoriesToShow = filters.timeCategories.length > 0
@@ -632,6 +647,43 @@ export default function ExportPage() {
               <MultiSelect options={BIKOU_OPTIONS} value={filters.bikou} onChange={(v) => setFilter("bikou", v)} placeholder="すべて（選択なし）" />
             </div>
           </div>
+          {/* リストランクフィルター */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <label className="block text-xs font-medium text-gray-500 mb-2">
+              リストランク
+              {filters.listRanks.length > 0 && (
+                <span className="ml-2 text-blue-600 font-normal">{filters.listRanks.length}件選択</span>
+              )}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {LIST_RANK_OPTIONS.map((opt) => {
+                const checked = filters.listRanks.includes(opt.value);
+                return (
+                  <label key={opt.value}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer select-none transition-colors text-sm ${
+                      checked
+                        ? "bg-blue-50 border-blue-300 text-blue-800"
+                        : "bg-white border-gray-200 text-gray-700 hover:border-gray-400"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        setFilter("listRanks", checked
+                          ? filters.listRanks.filter((v) => v !== opt.value)
+                          : [...filters.listRanks, opt.value]
+                        )
+                      }
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    {opt.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
           {/* 最大進捗フィルター */}
           <div className="mt-4 pt-4 border-t border-gray-100">
             <label className="block text-xs font-medium text-gray-500 mb-2">

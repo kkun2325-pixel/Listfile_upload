@@ -41,8 +41,8 @@ const RANK_COLOR: Record<number, string> = {
   7: 'text-green-800', 8: 'text-orange-600', 9: 'text-emerald-700', 10: 'text-red-400',
 };
 
-function RateBar({ rate, color }: { rate: number | null; color: string }) {
-  const pct = rate ?? 0;
+function RateBar({ rate, color }: { rate: number | string | null; color: string }) {
+  const pct = Number(rate ?? 0);
   return (
     <div className="flex items-center gap-2">
       <div className="w-16 bg-gray-100 rounded-full h-1.5 shrink-0">
@@ -101,12 +101,12 @@ function DetailModal({
               <div className="bg-blue-50 rounded-xl p-4 text-center">
                 <p className="text-xs text-gray-500 mb-1">対応</p>
                 <p className="text-3xl font-bold text-blue-600">{detail.stats.answered_calls}</p>
-                <p className="text-xs text-blue-400 mt-0.5">{(detail.stats.answered_rate ?? 0).toFixed(1)}%</p>
+                <p className="text-xs text-blue-400 mt-0.5">{Number(detail.stats.answered_rate ?? 0).toFixed(1)}%</p>
               </div>
               <div className="bg-green-50 rounded-xl p-4 text-center">
                 <p className="text-xs text-gray-500 mb-1">決裁接触</p>
                 <p className="text-3xl font-bold text-green-600">{detail.stats.decision_calls}</p>
-                <p className="text-xs text-green-400 mt-0.5">{(detail.stats.decision_rate ?? 0).toFixed(1)}%</p>
+                <p className="text-xs text-green-400 mt-0.5">{Number(detail.stats.decision_rate ?? 0).toFixed(1)}%</p>
               </div>
             </div>
 

@@ -27,6 +27,11 @@ interface Stats {
   list_rank_distribution: { rank: string; count: number }[];
 }
 
+interface CalcRankStats {
+  distribution: Record<string, number>;
+  rank1Missing: { seki_only: number; jikan_only: number; both: number };
+}
+
 type TabKey = "全体" | "飲食SH" | "サイネージ" | "デリバリー" | "ペイメント";
 const TABS: TabKey[] = ["全体", "飲食SH", "サイネージ", "デリバリー", "ペイメント"];
 
@@ -126,6 +131,7 @@ export default function DashboardPage() {
   const [error, setError]               = useState("");
   const [activeTab, setActiveTab]       = useState<TabKey>("飲食SH");
   const [rankHistory, setRankHistory]   = useState<Record<string, string | number>[]>([]);
+  const [calcRankStats, setCalcRankStats] = useState<CalcRankStats | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("auth_token");
@@ -146,6 +152,12 @@ export default function DashboardPage() {
     fetch("/api/admin/snapshot", { headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` } })
       .then(r => r.json())
       .then(data => { if (data.success) setRankHistory(data.history ?? []); })
+      .catch(() => {});
+
+    // 計算ランク統計を取得
+    fetch("/api/dashboard/rank-stats", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { if (data.success) setCalcRankStats({ distribution: data.distribution, rank1Missing: data.rank1Missing }); })
       .catch(() => {});
   }, [router]);
 
@@ -364,6 +376,139 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* ─── ランクアップ TODO ─── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-gray-700">リストランクアップ TODO</p>
+          <p className="text-xs text-gray-400 mt-0.5">フィールドデータ・架電履歴から自動計算（リアルタイム）</p>
+        </div>
+
+        {calcRankStats ? (
+          <div className="space-y-3">
+            <RankTodoRow
+              from={0} to={1}
+              fromCount={calcRankStats.distribution["0"] ?? 0}
+              toCount={calcRankStats.distribution["1"] ?? 0}
+              action="店名・電話番号・住所を入力"
+              actionColor="text-red-600"
+              details={null}
+            />
+            <RankTodoRow
+              from={1} to={2}
+              fromCount={calcRankStats.distribution["1"] ?? 0}
+              toCount={calcRankStats.distribution["2"] ?? 0}
+              action="席数・時間振りを入力"
+              actionColor="text-orange-500"
+              details={[
+                { label: "席数のみ空白", count: calcRankStats.rank1Missing.seki_only },
+                { label: "時間振りのみ空白", count: calcRankStats.rank1Missing.jikan_only },
+                { label: "両方空白", count: calcRankStats.rank1Missing.both },
+              ]}
+            />
+            <RankTodoRow
+              from={2} to={3}
+              fromCount={calcRankStats.distribution["2"] ?? 0}
+              toCount={calcRankStats.distribution["3"] ?? 0}
+              action="架電して現アナ確認（通電確認）"
+              actionColor="text-yellow-600"
+              details={null}
+            />
+            <RankTodoRow
+              from={3} to={4}
+              fromCount={calcRankStats.distribution["3"] ?? 0}
+              toCount={calcRankStats.distribution["4"] ?? 0}
+              action="架電して対応履歴を作る（担当者と会話）"
+              actionColor="text-blue-500"
+              details={null}
+            />
+            <RankTodoRow
+              from={4} to={5}
+              fromCount={calcRankStats.distribution["4"] ?? 0}
+              toCount={calcRankStats.distribution["5"] ?? 0}
+              action="決裁者まで繋ぐ"
+              actionColor="text-indigo-500"
+              details={null}
+            />
+            <RankTodoRow
+              from={5} to={6}
+              fromCount={calcRankStats.distribution["5"] ?? 0}
+              toCount={calcRankStats.distribution["6"] ?? 0}
+              action="用件を伝えて有効な会話を作る"
+              actionColor="text-purple-500"
+              details={null}
+            />
+            <RankTodoRow
+              from={6} to={7}
+              fromCount={calcRankStats.distribution["6"] ?? 0}
+              toCount={calcRankStats.distribution["7"] ?? 0}
+              action="アポ・受注"
+              actionColor="text-green-600"
+              details={null}
+            />
+            <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+              <span className="text-xs font-bold text-green-700 bg-green-200 rounded px-2 py-0.5">ランク7</span>
+              <span className="text-sm font-semibold text-green-700">
+                アポ受注済 — {(calcRankStats.distribution["7"] ?? 0).toLocaleString()}件
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center py-10 text-gray-400 text-sm">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-300 mr-3" />
+            計算中...
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+function RankTodoRow({
+  from, to, fromCount, toCount, action, actionColor, details,
+}: {
+  from: number; to: number;
+  fromCount: number; toCount: number;
+  action: string; actionColor: string;
+  details: { label: string; count: number }[] | null;
+}) {
+  const RANK_BG: Record<number, string> = {
+    0: "bg-gray-100 text-gray-600",
+    1: "bg-blue-100 text-blue-700",
+    2: "bg-blue-200 text-blue-800",
+    3: "bg-blue-300 text-blue-900",
+    4: "bg-blue-400 text-white",
+    5: "bg-blue-500 text-white",
+    6: "bg-blue-700 text-white",
+    7: "bg-blue-900 text-white",
+  };
+  return (
+    <div className="flex items-start gap-3 border border-gray-100 rounded-lg px-4 py-3 hover:bg-gray-50">
+      <div className="flex flex-col items-center gap-1 shrink-0 w-20">
+        <span className={`text-xs font-bold rounded px-2 py-0.5 ${RANK_BG[from]}`}>ランク{from}</span>
+        <span className="text-sm font-semibold text-gray-800">{fromCount.toLocaleString()}<span className="text-xs text-gray-400">件</span></span>
+      </div>
+      <div className="flex flex-col justify-center shrink-0 mt-1">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4 text-gray-300">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+        </svg>
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${actionColor}`}>{action}</p>
+        {details && (
+          <div className="flex flex-wrap gap-3 mt-1.5">
+            {details.map(d => (
+              <span key={d.label} className="text-xs text-gray-500">
+                {d.label}: <span className="font-semibold text-gray-700">{d.count.toLocaleString()}件</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col items-center gap-1 shrink-0 w-20">
+        <span className={`text-xs font-bold rounded px-2 py-0.5 ${RANK_BG[to]}`}>ランク{to}</span>
+        <span className="text-sm font-semibold text-gray-800">{toCount.toLocaleString()}<span className="text-xs text-gray-400">件</span></span>
+      </div>
     </div>
   );
 }

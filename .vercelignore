@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+out
+build
+data
+*.db
+*.db-wal
+*.db-shm
+.env.local
+.env.*.local
+csv-upload-app.zip
+list_uploaader/
+KOT/
